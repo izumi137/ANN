@@ -19,12 +19,14 @@ int main()
     chrono::steady_clock::time_point begin, end;
     string train_file = "D:\\AI_HCMUS\\Nam4\\Parallel Programing\\pj\\ANN\\train.txt";
     string test_file = "D:\\AI_HCMUS\\Nam4\\Parallel Programing\\pj\\ANN\\test.txt";
+    string valid_file = "D:\\AI_HCMUS\\Nam4\\Parallel Programing\\pj\\ANN\\valid.txt";
     // Load data
     std::cout << "Loading data...\n";
-    Data trainData, testData;
+    Data trainData, testData, validData;
     begin = std::chrono::steady_clock::now();
     trainData.load_data(train_file, -1);
     testData.load_data(test_file, -1);
+    validData.load_data(valid_file, -1);
     end = std::chrono::steady_clock::now();
     std::cout << "Data reading time: " << (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.0f << std::endl;
     //trainData.print_sample();

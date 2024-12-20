@@ -49,10 +49,17 @@ train_labels = load_labels(os.path.join(output_dir, files["train_labels"]))
 test_images = load_images(os.path.join(output_dir, files["test_images"]))
 test_labels = load_labels(os.path.join(output_dir, files["test_labels"]))
 
+valid_images = train_images[-10000:,:,:]
+valid_labels =  train_labels[-10000:]
+train_images = train_images[:-10000,:,:]
+train_labels = train_labels[:-10000]
+
 print(f"Training images shape: {train_images.shape}")
 print(f"Training labels shape: {train_labels.shape}")
 print(f"Test images shape: {test_images.shape}")
 print(f"Test labels shape: {test_labels.shape}")
+print(f"Test valid shape: {valid_images.shape}")
+print(f"Test valid shape: {valid_labels.shape}")
 
 # Example: Save the first training image to a .txt file
 def save_image_to_txt(image, label, file_path):
@@ -78,7 +85,7 @@ with open(output_file, 'w') as f:
             f.write(" ")
         f.write(str(train_labels[i]))
         # Add newline between images
-        f.write("\n")
+        f.write("\n") if i < len(train_images) - 1 else None
     print(f"Saved all images to {output_file}")
 
 
@@ -91,5 +98,18 @@ with open(output_file, 'w') as f:
             f.write(" ")
         f.write(str(test_labels[i]))
         # Add newline between images
-        f.write("\n")
+        f.write("\n") if i < len(test_images) - 1 else None
+    print(f"Saved all images to {output_file}")
+
+
+output_file = "./valid.txt"
+
+with open(output_file, 'w') as f:
+    for i, image in enumerate(valid_images):
+        for row in image:
+            f.write(" ".join(map(str, row)))
+            f.write(" ")
+        f.write(str(valid_labels[i]))
+        # Add newline between images
+        f.write("\n") if i < len(valid_images) - 1 else None
     print(f"Saved all images to {output_file}")

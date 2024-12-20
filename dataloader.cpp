@@ -7,8 +7,11 @@ int min(const int& a, const int& b)
     return a;
 }
 
+Data::Data() {}
+
 void Data::load_data(const string& filepath, int maxsize)
 {
+    //bs = _batch_size;
     ifstream file(filepath, ios::binary);
     if (!file.is_open()) {
         throw runtime_error("Cannot open file: " + filepath);
