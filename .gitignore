@@ -72,6 +72,7 @@ ScaffoldingReadMe.txt
 StyleCopReport.xml
 
 # optional
+fashion_mnist/*
 *.txt
 
 # Files built by Visual Studio
