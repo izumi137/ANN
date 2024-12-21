@@ -7,9 +7,41 @@
 #include "utils.h"
 using namespace std;
 const int SIZE = 28;
+struct CFG
+{
+    int epochs, batch_size, n_in, n_out;
+    float lr;
+    int h1;
+};
+
+float train(
+    const vector<vector<float>>& xtrain,
+    const vector<vector<int>>& ytrain,
+    const vector<vector<float>>& xtest,
+    const vector<vector<int>>& ytest,
+    const CFG& cfg,
+    Model& model,
+    CE& ce
+);
+
+void test(
+    const vector<vector<float>>& xtest,
+    const vector<vector<int>>& ytest,
+    Model& model,
+    float& acc
+);
+
 
 int main()
 {
+    CFG cfg;
+    cfg.batch_size = 32;
+    cfg.epochs = 10;
+    cfg.h1 = 128;
+    cfg.lr = 0.01f;
+    cfg.n_in = SIZE * SIZE;
+    cfg.n_out = 10;
+
     int n_in = SIZE * SIZE;
     int n_hidden = 128;
     int n_out = 10;
@@ -22,6 +54,7 @@ int main()
     string valid_file = "D:\\AI_HCMUS\\Nam4\\Parallel Programing\\pj\\ANN\\valid.txt";
     // Load data
     std::cout << "Loading data...\n";
+
     Data trainData, testData, validData;
     begin = std::chrono::steady_clock::now();
     trainData.load_data(train_file, -1);
@@ -31,103 +64,125 @@ int main()
     std::cout << "Data reading time: " << (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.0f << std::endl;
     //trainData.print_sample();
 
-    //print_sample(train_data[0]);
-
-
     // Model
     Model model(n_in, n_hidden, n_out, lr);
 
     // Lossfunction
     CE ce;
 
-    // Training
+    // -------------------Load data---------------------------
+    vector<vector<float>> x_train = batchnorm(trainData.get_all_data());
+    vector<vector<int>> y_train = trainData.get_all_label();
 
-    vector<vector<float>> batchdata;
-    vector<vector<int>> batchlabel;
+    vector<vector<float>> x_valid = batchnorm(validData.get_all_data());
+    vector<vector<int>> y_valid = validData.get_all_label();
 
-    vector<vector<float>> alltraindt = batchnorm(trainData.get_all_data());
-    vector<vector<int>> alltrainlb = trainData.get_all_label();
-    float loss = 0;
+    vector<vector<float>> x_test = batchnorm(testData.get_all_data());
+    vector<vector<int>> y_test = testData.get_all_label();
+
+    //--------------------Train-----------------------------
     cout << "Training..." << endl;
-    begin = std::chrono::steady_clock::now();
-    for (int epoch = 0; epoch < n_epochs; epoch++) {
-        chrono::steady_clock::time_point begin_e, end_e;
-        begin_e = std::chrono::steady_clock::now();
-        vector<vector<int>> predicts, output;
-        for (int b = 0; b < trainData.size(); b += bs)
-        {
-            bool flag = false;
-            batchdata = trainData.get_batch_data(bs, b, flag);
-            batchlabel = trainData.get_batch_label(bs, b, flag);
-            if (flag == false)
-                continue;
-
-            vector<vector<float>> inputs = batchnorm(batchdata);
-
-            vector<vector<float>> predictions = model.forward(inputs);
-            loss = ce.crossEntropyLoss(predictions, batchlabel);
-
-            vector<vector<float>> grad_output = predictions;
-
-            for (size_t i = 0; i < batchlabel.size(); ++i)
-            {
-                int label = batchlabel[i][0];
-                grad_output[i][label] -= 1.0;
-            }
-
-            model.backward(grad_output);
-            //model.update_weights(lr);
-
-        }
-
-        vector<vector<float>>predictions = model.forward(alltraindt);
-        predicts = get_arg_max(predictions);
-        float acc = accuracy(predicts, alltrainlb);
-        //cout << endl << "Predict: ";
-        //for (const auto& row : predicts)
-        //{
-        //   cout << row[0] << " ";
-        //}
-        cout << "Epoch " << epoch + 1 << ", Loss: " << loss  << ", Acc: " << acc << endl;
-        end_e = std::chrono::steady_clock::now();
-        std::cout << "Epoch runtime: " << (std::chrono::duration_cast<std::chrono::microseconds>(end_e - begin_e).count()) / 1000000.0f << std::endl;
-    }
+    float loss = train(x_train, y_train, x_valid, y_valid, cfg, model, ce);
     end = std::chrono::steady_clock::now();
     std::cout << "Total training time: " << (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.0f << std::endl;
 
 
     //--------------------Test-----------------------------
     cout << "Tesing..." << endl;
-    begin = std::chrono::steady_clock::now();
-    vector<vector<float>> xtest = batchnorm(testData.get_all_data());
-    vector<vector<int>> ytest = testData.get_all_label();
-
-    vector<vector<float>>predictions = model.forward(xtest);
-    vector<vector<int>> predicts = get_arg_max(predictions);
-    float acc = accuracy(predicts, ytest);
-    cout << endl << "Predict: ";
-    //for (const auto& row : predicts)
-    //{
-    //   cout << row[0] << " ";
-    //}
-    cout << "Loss: " << loss << ", Acc: " << acc << endl;
-    end = std::chrono::steady_clock::now();
-    std::cout << "Total testing time: " << (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.0f << std::endl;
-    /*Linear_CPU* linear1 = new Linear_CPU(BATCHSIZE, n_in, n_hidden);
-    ReLU_CPU* relu1 = new ReLU_CPU(n_hidden);
-    Linear_CPU* linear2 = new Linear_CPU(BATCHSIZE, n_hidden, n_hidden);
-    ReLU_CPU* relu2 = new ReLU_CPU(n_hidden);
-    Linear_CPU* linear3 = new Linear_CPU(BATCHSIZE, n_hidden, n_out);
-    SoftMax_CPU* softmax1 = new SoftMax_CPU(n_out);
-
-    std::vector<Module*> layers = { linear1, relu1, linear2, relu2, linear3, softmax1 };
-    Sequential_CPU seq(layers);
 
     begin = std::chrono::steady_clock::now();
-    train_cpu(seq, trainData, BATCHSIZE, n_in, n_epochs);
+    float acc = 0.0f;
+    test(x_test, y_test, model, acc);
     end = std::chrono::steady_clock::now();
-    std::cout << "Training time: " << (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.0f << std::endl;*/
+    float runtime = (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.0f;
+    std::cout << "Total testing time: " << runtime << std::endl;
 
+    // --------------------Write result-----------------------------
+    std::ofstream outfile;
+    string filename = "result.txt";
+    outfile.open(filename, std::ios::app);
+
+    if (!outfile.is_open()) {
+        std::cerr << "Couldn't open file " << filename << std::endl;
+        return 1;
+    }
+
+    outfile << "CPU: " << "AVG Loss: " << loss << ", " << "Test accuracy: " << acc << endl;
+    outfile.close();
     return 0;
 }
 
+
+void test(
+    const vector<vector<float>>& xtest,
+    const vector<vector<int>>& ytest,
+    Model& model,
+    float& acc
+)
+{
+    vector<vector<float>> x = batchnorm(xtest);
+    vector<vector<float>>predictions = model.forward(x);
+    auto predicts = get_arg_max(predictions);
+    acc = accuracy(predicts, ytest);
+}
+
+float train(
+    const vector<vector<float>>& xtrain,
+    const vector<vector<int>>& ytrain,
+    const vector<vector<float>>& xtest,
+    const vector<vector<int>>& ytest,
+    const CFG& cfg,
+    Model& model,
+    CE& ce
+)
+{
+    chrono::steady_clock::time_point begin, end;
+    begin = std::chrono::steady_clock::now();
+    float loss = 0;
+    for (int epoch = 0; epoch < cfg.epochs; epoch++) {
+        
+        chrono::steady_clock::time_point begin_e, end_e;
+        vector<vector<float>> xbatch(cfg.batch_size, vector<float>(cfg.n_in, 0.0f));
+        vector<vector<int>> ybatch(cfg.batch_size, vector<int>(1, 0));
+
+        begin_e = std::chrono::steady_clock::now();
+        vector<vector<int>> predicts, output;
+        for (int b = 0; b < xtrain.size(); ++b)
+        {
+            bool flag = true;
+            flag = getBatchData(xtrain, ytrain, xbatch, ybatch, b, cfg.batch_size);
+            if (flag == 0) // drop last batch if not enough
+                break;
+
+            // Device pixel value by 255
+            vector<vector<float>> inputs = batchnorm(xbatch);
+
+            // Forward
+            vector<vector<float>> predictions = model.forward(inputs);
+
+            // Calculate loss
+            loss = ce.crossEntropyLoss(predictions, ybatch);
+
+            // Backward and update
+            vector<vector<float>> grad_output = predictions;
+
+            for (size_t i = 0; i < ybatch.size(); ++i)
+            {
+                int label = ybatch[i][0];
+                grad_output[i][label] -= 1.0; // Minus the correct layer probability by 1
+            }
+
+            model.backward(grad_output);
+            //model.update_weights(lr);
+        }
+        float acc;
+        test(xtest, ytest, model, acc);
+        cout << "Epoch " << epoch + 1 << ", Loss: " << loss << ", Acc: " << acc << endl;
+        end_e = std::chrono::steady_clock::now();
+        std::cout << "Epoch runtime: " << (std::chrono::duration_cast<std::chrono::microseconds>(end_e - begin_e).count()) / 1000000.0f << std::endl;
+    }
+
+    // Calculate runtime
+    float runtime = (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.0f;
+    return runtime;
+}

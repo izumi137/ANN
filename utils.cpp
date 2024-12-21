@@ -85,7 +85,7 @@ vector<vector<float>> batchnorm(vector<vector<float>> inp)
 
 float accuracy(vector<vector<int>> v1, vector<vector<int>> v2)
 {
-    cout << "len: " << v1.size() << " " << v2.size();
+    //cout << "len: " << v1.size() << " " << v2.size();
     float sum = 0;
     for (int i = 0; i < v1.size(); i++)
         if (v1[i][0] == v2[i][0])
@@ -176,3 +176,29 @@ void addBias(vector<vector<float>>& a, const vector<float>& bias)
 //    uniform_int_distribution<int> dist(min, max);
 //    return dist(gen);
 //}
+
+
+bool getBatchData(
+    const vector<vector<float>>& x,
+    const vector<vector<int>>& y,
+    vector<vector<float>>& xbatch,
+    vector<vector<int>>& ybatch,
+    const int& batch,
+    const int& batch_size)
+{
+    int start = batch * batch_size;
+    int end = start + batch_size;
+    if (end > x.size())
+        return 0;
+
+    for (int i = start, i_b = 0; i < end; ++i, ++i_b)
+    {
+        for (int j = 0; j < xbatch[0].size(); ++j)
+            xbatch[i_b][j] = x[i][j];
+        for (int j = 0; j < ybatch[0].size(); ++j)
+            ybatch[i_b][j] = y[i][j];
+    }
+    return 1;
+}
+
+

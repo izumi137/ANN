@@ -15,3 +15,11 @@ float accuracy(vector<vector<int>> v1, vector<vector<int>> v2);
 float maxf(const float& a, const float& b);
 vector<vector<float>> matMul(const vector<vector<float>>& a, const vector<vector<float>>& b, int operation = 0);
 void addBias(vector<vector<float>>& a, const vector<float> &bias);
+
+bool getBatchData(
+    const vector<vector<float>>& x,
+    const vector<vector<int>>& y,
+    vector<vector<float>>& xbatch,
+    vector<vector<int>>& ybatch,
+    const int& batch,
+    const int& batch_size); // return 1 if success, else 0
