@@ -30,7 +30,7 @@ void Data::load_data(const string& filepath, int maxsize)
         count++;
     }
     file.close();
-    cout << "Loaded " << count << " data from " << filepath;
+    cout << "Loaded " << count << " data from " << filepath << endl;
 
 }
 
