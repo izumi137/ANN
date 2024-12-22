@@ -1,5 +1,6 @@
 #include "softmax.h"
 #include <algorithm>
+#include <cmath>
 vector<vector<float>> Softmax::forward(const vector<vector<float>>& input)  {
     vector<vector<float>> output = input;
     for (int i = 0; i < input.size(); ++i) {
