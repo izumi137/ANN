@@ -32,11 +32,15 @@ void test(
 );
 
 
-int main()
+int main(int argc, char ** argv)
 {
+    if (argc != 3) {
+        std::cerr << "Usage: " << argv[0] << " <batch_size> <epochs>" << std::endl;
+        return 1;
+    }
     CFG cfg;
-    cfg.batch_size = 32;
-    cfg.epochs = 10;
+    cfg.batch_size = atoi(argv[1]);
+    cfg.epochs = atoi(argv[2]);
     cfg.h1 = 128;
     cfg.lr = 0.01f;
     cfg.n_in = SIZE * SIZE;
@@ -88,6 +92,7 @@ int main()
     float acc = 0.0f;
     test(x_test, y_test, model, acc);
     end = std::chrono::steady_clock::now();
+    cout << "Test accuracy: " << acc << endl;
     float runtime = (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.0f;
     std::cout << "Total testing time: " << runtime << std::endl;
 
@@ -132,8 +137,8 @@ float train(
 )
 {
     
-    chrono::steady_clock::time_point begin, end;
-    begin = std::chrono::steady_clock::now();
+    // chrono::steady_clock::time_point begin, end;
+    // begin = std::chrono::steady_clock::now();
     float loss = 0;
     for (int epoch = 0; epoch < cfg.epochs; epoch++) {
         model.train();
@@ -177,8 +182,8 @@ float train(
         end_e = std::chrono::steady_clock::now();
         std::cout << "Epoch runtime: " << (std::chrono::duration_cast<std::chrono::microseconds>(end_e - begin_e).count()) / 1000000.0f << std::endl;
     }
-
+    // end = std::chrono::steady_clock::now();
     // Calculate runtime
-    float runtime = (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.0f;
-    return runtime;
+    // float runtime = (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.0f;
+    return loss;
 }
