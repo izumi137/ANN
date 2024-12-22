@@ -43,9 +43,9 @@ int main()
     cfg.n_out = 10;
 
     chrono::steady_clock::time_point begin, end;
-    string train_file = "D:\\AI_HCMUS\\Nam4\\Parallel Programing\\pj\\ANN\\train.txt";
-    string test_file = "D:\\AI_HCMUS\\Nam4\\Parallel Programing\\pj\\ANN\\test.txt";
-    string valid_file = "D:\\AI_HCMUS\\Nam4\\Parallel Programing\\pj\\ANN\\valid.txt";
+    string train_file = "train.txt";
+    string test_file = "test.txt";
+    string valid_file = "valid.txt";
     // Load data
     std::cout << "Loading data...\n";
 
@@ -131,7 +131,7 @@ float train(
     CE& ce
 )
 {
-
+    
     chrono::steady_clock::time_point begin, end;
     begin = std::chrono::steady_clock::now();
     float loss = 0;
