@@ -72,8 +72,8 @@ struct GpuTimer
 }
 
 
-// C(mxk) = A(mxn) @ B(nxk) / d
-__global__ void matMulAB(float *C, float *A, float *B, int m, int n, int k, int d)
+// C(mxk) = A(mxn) @ B(nxk)
+__global__ void matMulAB(float *C, float *A, float *B, int m, int n, int k)
 {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
@@ -88,8 +88,8 @@ __global__ void matMulAB(float *C, float *A, float *B, int m, int n, int k, int 
     }
 }
 
-// C(mxk) = A(nxm)^T @ B(nxk) / d
-__global__ void matMulATB(float *C, float *A, float *B, int m, int n, int k, int d)
+// C(mxk) = A(nxm)^T @ B(nxk)
+__global__ void matMulATB(float *C, float *A, float *B, int m, int n, int k)
 {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
@@ -105,7 +105,7 @@ __global__ void matMulATB(float *C, float *A, float *B, int m, int n, int k, int
 }
 
 // C(mxk) = A(mxn) @ B(kxn)^T / d
-__global__ void matMulABT(float *C, float *A, float *B, int m, int n, int k, int d)
+__global__ void matMulABT(float *C, float *A, float *B, int m, int n, int k)
 {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
@@ -314,20 +314,20 @@ void forward(ANN *nn, float *X, int BATCH_SIZE, dim3 bs2 = dim3(32, 32), dim3 bs
     // Z1 = X @ W1^T + b1 = (32x784) @ (128x784)^T = (32x128) 
     grid2.y = (unsigned int)ceil((float)BATCH_SIZE / (float)bs2.y);
     grid2.x = (unsigned int)ceil((float)128 / (float)bs2.x);
-    matMulABT<<<grid2, bs2>>>(nn->Z1, X, nn->W1, BATCH_SIZE, 784, 128, 1.0f);
+    matMulABT<<<grid2, bs2>>>(nn->Z1, X, nn->W1, BATCH_SIZE, 784, 128);
     addBias<<<grid2, bs2>>>(nn->Z1, nn->b1, BATCH_SIZE, 128);
     // A1 = relu(Z1) = (32x128)
     relu<<<grid2, bs2>>>(nn->A1, nn->Z1, BATCH_SIZE, 128);
 
     // Z2 = A1 @ W2^T + b2 = (32x128) @ (128x128)^T = (32x128)
-    matMulABT<<<grid2, bs2>>>(nn->Z2, nn->A1, nn->W2, BATCH_SIZE, 128, 128, 1.0f);
+    matMulABT<<<grid2, bs2>>>(nn->Z2, nn->A1, nn->W2, BATCH_SIZE, 128, 128);
     addBias<<<grid2, bs2>>>(nn->Z2, nn->b2, BATCH_SIZE, 128);
     // A2 = relu(Z2) = (32x128)
     relu<<<grid2, bs2>>>(nn->A2, nn->Z2, BATCH_SIZE, 128);
 
     // Z3 = A2 @ W3^T + b3 = (32x128) @ (10x128)^T = (32x10)
     grid2.x = (unsigned int)ceil((float)10 / (float)bs2.x);
-    matMulABT<<<grid2, bs2>>>(nn->Z3, nn->A2, nn->W3, BATCH_SIZE, 128, 10, 1.0f);
+    matMulABT<<<grid2, bs2>>>(nn->Z3, nn->A2, nn->W3, BATCH_SIZE, 128, 10);
     addBias<<<grid2, bs2>>>(nn->Z3, nn->b3, BATCH_SIZE, 10);
     // Y_pred = softmax(Z3) = (32x10)
     grid1.x = (unsigned int)(ceil((float)BATCH_SIZE / (float)bs1.x));
@@ -347,7 +347,7 @@ void backward(ANN *nn, float *X, float *Y_true, int BATCH_SIZE, dim3 bs2 = dim3(
     // d_W3 = d_Z3^T @ A2 / 32 = (32x10)^T @ (32x128) = (10x128)
     grid2.y = (unsigned int)ceil((float)10 / (float)bs2.y);
     grid2.x = (unsigned int)ceil((float)128 / (float)bs2.x);
-    matMulATB<<<grid2, bs2>>>(nn->d_W3, nn->d_Z3, nn->A2, 10, BATCH_SIZE, 128, BATCH_SIZE);
+    matMulATB<<<grid2, bs2>>>(nn->d_W3, nn->d_Z3, nn->A2, 10, BATCH_SIZE, 128);
     // d_b3 = sum_batch(d_Z3) = sum_batch(32x10) = (1, 10)
     block1.x = 10;
     sumBatch<<<grid1, block1>>>(nn->d_b3, nn->d_Z3, BATCH_SIZE, 10);
@@ -356,12 +356,12 @@ void backward(ANN *nn, float *X, float *Y_true, int BATCH_SIZE, dim3 bs2 = dim3(
     // d_A2 = d_Z3 @ W3 = (32x10) x (10x128) = (32x128)
     grid2.y = (unsigned int)ceil((float)BATCH_SIZE / (float)bs2.y);
     grid2.x = (unsigned int)ceil((float)128 / (float)bs2.x);
-    matMulAB<<<grid2, bs2>>>(nn->d_A2, nn->d_Z3, nn->W3, BATCH_SIZE, 10, 128, 1.0f);
+    matMulAB<<<grid2, bs2>>>(nn->d_A2, nn->d_Z3, nn->W3, BATCH_SIZE, 10, 128);
     // d_Z2 = d_relu(d_A2, Z2) = d_relu(32x128) = (32x128)
     drelu<<<grid2, bs2>>>(nn->d_Z2, nn->d_A2, nn->Z2, BATCH_SIZE, 128);
     // d_W2 = d_Z2^T @ A_1 / 32 = (32x128)^T @ (32x128) = (128x128)
     grid2.y = (unsigned int)ceil((float)128 / (float)bs2.y);
-    matMulATB<<<grid2, bs2>>>(nn->d_W2, nn->d_Z2, nn->A1, 128, BATCH_SIZE, 128, BATCH_SIZE);
+    matMulATB<<<grid2, bs2>>>(nn->d_W2, nn->d_Z2, nn->A1, 128, BATCH_SIZE, 128);
     // d_b2 = sum_batch(d_Z2) = sum_batch(32x128) = (1, 128)  
     block1.x = 128;
     sumBatch<<<grid1, block1>>>(nn->d_b2, nn->d_Z2, BATCH_SIZE, 128);
@@ -370,13 +370,13 @@ void backward(ANN *nn, float *X, float *Y_true, int BATCH_SIZE, dim3 bs2 = dim3(
     // d_A1 = d_Z2 @ W2 = (32x128) x (128x128) = (32x128)
     grid2.y = (unsigned int)ceil((float)BATCH_SIZE / (float)bs2.y);
     grid2.x = (unsigned int)ceil(128 / bs2.x);
-    matMulAB<<<grid2, bs2>>>(nn->d_A1, nn->d_Z2, nn->W2, BATCH_SIZE, 128, 128, 1.0f);
+    matMulAB<<<grid2, bs2>>>(nn->d_A1, nn->d_Z2, nn->W2, BATCH_SIZE, 128, 128);
     // d_Z1 = d_relu(d_A1, Z1) = d_relu(32x128) = (32x128)
     drelu<<<grid2, bs2>>>(nn->d_Z1, nn->d_A1, nn->Z1, BATCH_SIZE, 128);
     // d_W1 = d_Z1^T @ X / 32 = (32x128)^T @ (32x784) = (128x784)
     grid2.y = (unsigned int)ceil((float)128 / (float)bs2.y);
     grid2.x = (unsigned int)ceil((float)784 / (float)bs2.x);
-    matMulATB<<<grid2, bs2>>>(nn->d_W1, nn->d_Z1, X, 128, BATCH_SIZE, 784, BATCH_SIZE);
+    matMulATB<<<grid2, bs2>>>(nn->d_W1, nn->d_Z1, X, 128, BATCH_SIZE, 784);
     // d_b1 = sum_batch(d_Z1) = sum_batch(32x128) = (1, 128)  
     block1.x = 128;
     sumBatch<<<grid1, block1>>>(nn->d_b1, nn->d_Z1, BATCH_SIZE, 128);
