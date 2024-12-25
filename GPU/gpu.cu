@@ -445,6 +445,7 @@ void eval(ANN *nn, int mode, float* X, float *Y_true, dim3 bs2 = dim3(32, 32), d
 
 void train(ANN *nn, int EPOCHS, int BATCH_SIZE, float *Y_train, float *Y_valid, float *Y_test, dim3 bs2 = dim3(32, 32), dim3 bs1 = dim3(32)) 
 {
+    float total_time = 0.0f;
     int num_batches = floor(50000 / BATCH_SIZE);
     for (int epoch = 0; epoch < EPOCHS; epoch++) 
     {
@@ -463,6 +464,7 @@ void train(ANN *nn, int EPOCHS, int BATCH_SIZE, float *Y_train, float *Y_valid, 
         timer.Stop();
 		float time = timer.Elapsed();
 		printf("Time: %f ms\n", time);
+        total_time += time;
 
         printf("Train: ");
         eval(nn, 0, nn->X_train, Y_train, bs2, bs1);
@@ -475,7 +477,9 @@ void train(ANN *nn, int EPOCHS, int BATCH_SIZE, float *Y_train, float *Y_valid, 
     }
     
     printf("Finished training\nTest: ");
+    total_time /= EPOCHS;
     eval(nn, 1, nn->X_test, Y_test, bs2, bs1);
+    printf("\nAverage time per epoch: %f ms\n", total_time);
 }
 
 
@@ -518,8 +522,6 @@ int main(int argc, char ** argv)
     readData("train.txt", X_train, Y_train, 50000); 
     readData("valid.txt", X_valid, Y_valid, 10000);
     readData("test.txt",  X_test,  Y_test,  10000);
-
-    printf("Label %f:\n", Y_train[1]);
 
     ANN nn;
     initANN(&nn, X_train, Y_train, X_valid, Y_valid, X_test, Y_test, BATCH_SIZE);
