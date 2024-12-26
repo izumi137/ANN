@@ -483,8 +483,6 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     sharedMemSize = (bs2.y * bs2.x * 2 + 1) * sizeof(__half);
     matMulATB<<<grid2, bs2, sharedMemSize>>>(nn->d_W1, nn->d_Z1, X, 128, BATCH_SIZE, 784);
     // d_b1 = sum_batch(d_Z1) = sum_batch(32x128) = (1, 128)  
-    // bs1.x = 128;
-    // grid1.x = (bs1.x + 128 - 1) / bs1.x;
     sumBatch<<<grid1, bs1>>>(nn->d_b1, nn->d_Z1, BATCH_SIZE, 128);
 
     // UPDATE WEIGHTS

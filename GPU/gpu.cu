@@ -350,7 +350,7 @@ void backward(ANN *nn, float *X, float *Y_true, int BATCH_SIZE, dim3 bs2 = dim3(
     grid2.x = (bs2.x + 128 - 1) / bs2.x;
     matMulATB<<<grid2, bs2>>>(nn->d_W3, nn->d_Z3, nn->A2, 10, BATCH_SIZE, 128);
     // d_b3 = sum_batch(d_Z3) = sum_batch(32x10) = (1, 10)
-    bs1.x = 10;
+    
     grid1.x = (bs1.x + 10 - 1) / bs1.x;
     sumBatch<<<grid1, bs1>>>(nn->d_b3, nn->d_Z3, BATCH_SIZE, 10);
 

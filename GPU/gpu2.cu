@@ -351,7 +351,7 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     grid2.x = (bs2.x + 128- 1) / bs2.x;
     matMulATB<<<grid2, bs2>>>(nn->d_W3, nn->d_Z3, nn->A2, 10, BATCH_SIZE, 128);
     // d_b3 = sum_batch(d_Z3) = sum_batch(32x10) = (1, 10)
-    bs1.x = 10;
+    
     grid1.x = (bs1.x + 10- 1) / bs1.x;
     sumBatch<<<grid1, bs1>>>(nn->d_b3, nn->d_Z3, BATCH_SIZE, 10);
 
@@ -366,7 +366,7 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     grid2.y = (bs2.y + 128- 1) / bs2.y;
     matMulATB<<<grid2, bs2>>>(nn->d_W2, nn->d_Z2, nn->A1, 128, BATCH_SIZE, 128);
     // d_b2 = sum_batch(d_Z2) = sum_batch(32x128) = (1, 128)  
-    bs1.x = 128;
+    grid1.x = (bs1.x + 128- 1) / bs1.x;
     sumBatch<<<grid1, bs1>>>(nn->d_b2, nn->d_Z2, BATCH_SIZE, 128);
 
     // Layer: Hidden 1
@@ -381,7 +381,7 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     grid2.x = (bs2.x + 784- 1) / bs2.x;
     matMulATB<<<grid2, bs2>>>(nn->d_W1, nn->d_Z1, X, 128, BATCH_SIZE, 784);
     // d_b1 = sum_batch(d_Z1) = sum_batch(32x128) = (1, 128)  
-    bs1.x = 128;
+
     grid1.x = (bs1.x + 128- 1) / bs1.x;
     sumBatch<<<grid1, bs1>>>(nn->d_b1, nn->d_Z1, BATCH_SIZE, 128);
 
@@ -397,7 +397,7 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     updateWeight1D<<<grid1, bs1>>>(nn->b2, nn->d_b2, 128, LEARNING_RATE);
 
     grid2.y = (unsigned int)ceil((float)10 / (float)bs2.y);
-    bs1.x = 10;
+    grid1.x = (bs1.x + 10- 1) / bs1.x;
     updateWeight2D<<<grid2, bs2 >>>(nn->W3, nn->d_W3, 10, 128, LEARNING_RATE);
     updateWeight1D<<<grid1, bs1>>>(nn->b3, nn->d_b3, 10, LEARNING_RATE);
 
