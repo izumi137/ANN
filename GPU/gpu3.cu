@@ -80,39 +80,37 @@ __global__ void matMulAB(__half *C, __half *A, __half *B, int m, int n, int k)
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // Allocate shared memory for tiles of A and B
-    extern __shared__ __half sharedMem[];
-    __half* tileA = sharedMem;                                  // Tile for matrix A
-    __half* tileB = tileA + blockDim.y * blockDim.x;            // Tile for matrix B
+    int TILE_WIDTH = blockDim.x;
 
-    // Accumulator for the result
+    extern __shared__ __half sharedMem[];
+    __half* tileA = sharedMem;                                  
+    __half* tileB = tileA + TILE_WIDTH * TILE_WIDTH;     
+
     __half sum = __float2half(0.0f);
 
     // Iterate over tiles
-    for (int t = 0; t < (n + blockDim.x - 1) / blockDim.x; ++t)
+    for (int t = 0; t < (n + TILE_WIDTH - 1) / TILE_WIDTH; ++t)
     {
-        // Load tile of A into shared memory
-        if (row < m && (t * blockDim.x + threadIdx.x) < n)
-            tileA[threadIdx.y * blockDim.x + threadIdx.x] = A[row * n + t * blockDim.x + threadIdx.x];
+        // Load A and B to shared memory
+        if (row < m && (t * TILE_WIDTH + threadIdx.x) < n)
+            tileA[threadIdx.y * TILE_WIDTH + threadIdx.x] = A[row * n + t * TILE_WIDTH + threadIdx.x];
         else
-            tileA[threadIdx.y * blockDim.x + threadIdx.x] = __float2half(0.0f);
+            tileA[threadIdx.y * TILE_WIDTH + threadIdx.x] = __float2half(0.0f);
 
-        // Load tile of B into shared memory
         if (col < k && (t * blockDim.y + threadIdx.y) < n)
-            tileB[threadIdx.y * blockDim.x + threadIdx.x] = B[(t * blockDim.y + threadIdx.y) * k + col];
+            tileB[threadIdx.y * TILE_WIDTH + threadIdx.x] = B[(t * blockDim.y + threadIdx.y) * k + col];
         else
-            tileB[threadIdx.y * blockDim.x + threadIdx.x] = __float2half(0.0f);
+            tileB[threadIdx.y * TILE_WIDTH + threadIdx.x] = __float2half(0.0f);
 
         __syncthreads();
 
         // Multiply the tiles and accumulate the result
-        for (int i = 0; i < blockDim.x; ++i)
-            sum = __hadd(sum, __hmul(tileA[threadIdx.y * blockDim.x + i], tileB[i * blockDim.x + threadIdx.x]));
+        for (int i = 0; i < TILE_WIDTH; ++i)
+            sum = __hadd(sum, __hmul(tileA[threadIdx.y * TILE_WIDTH + i], tileB[i * TILE_WIDTH + threadIdx.x]));
 
         __syncthreads();
     }
 
-    // Write the result back to C
     if (row < m && col < k)
         C[row * k + col] = sum;
 }
@@ -124,33 +122,32 @@ __global__ void matMulATB(__half *C, __half *A, __half *B, int m, int n, int k)
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // Allocate shared memory for tiles of A and B
-    extern __shared__ __half sharedMem[];
-    __half* tileA = sharedMem;                            // Tile for transposed A
-    __half* tileB = tileA + blockDim.x * blockDim.y;      // Tile for matrix B
+    int TILE_WIDTH = blockDim.x;
 
-    // Accumulator for the result
+    extern __shared__ __half sharedMem[];
+    __half* tileA = sharedMem;                           
+    __half* tileB = tileA + TILE_WIDTH * TILE_WIDTH;     
+
     __half sum = __float2half(0.0f);
 
     // Loop over tiles
-    for (int t = 0; t < (n + blockDim.x - 1) / blockDim.x; ++t)
+    for (int t = 0; t < (n + TILE_WIDTH - 1) / TILE_WIDTH; ++t)
     {
-        // Load a tile of transposed A (A^T) into shared memory
-        if (row < m && (t * blockDim.y + threadIdx.y) < n)
-            tileA[threadIdx.x * blockDim.y + threadIdx.y] = A[(t * blockDim.x + threadIdx.x) * m + row];
+        // Load A and B to shared memory
+        if (row < m && (t * TILE_WIDTH + threadIdx.y) < n)
+            tileA[threadIdx.x * TILE_WIDTH + threadIdx.y] = A[(t * TILE_WIDTH + threadIdx.x) * m + row];
         else
-            tileA[threadIdx.x * blockDim.y + threadIdx.y] = __float2half(0.0f);
+            tileA[threadIdx.x * TILE_WIDTH + threadIdx.y] = __float2half(0.0f);
 
-        // Load a tile of B into shared memory
-        if (col < k && (t * blockDim.y + threadIdx.y) < n)
-            tileB[threadIdx.x * blockDim.y + threadIdx.y] = B[(t * blockDim.y + threadIdx.y) * k + col];
+        if (col < k && (t * TILE_WIDTH + threadIdx.y) < n)
+            tileB[threadIdx.x * TILE_WIDTH + threadIdx.y] = B[(t * TILE_WIDTH + threadIdx.y) * k + col];
         else
-            tileB[threadIdx.x * blockDim.y + threadIdx.y] = __float2half(0.0f);
+            tileB[threadIdx.x * TILE_WIDTH + threadIdx.y] = __float2half(0.0f);
 
         __syncthreads();
 
         // Multiply the tiles and accumulate the result
-        for (int i = 0; i < blockDim.x; ++i)
+        for (int i = 0; i < TILE_WIDTH; ++i)
         {
             sum = __hadd(sum, __hmul(tileA[i * blockDim.y + threadIdx.y], tileB[threadIdx.x * blockDim.y + i]));
         }
@@ -158,7 +155,6 @@ __global__ void matMulATB(__half *C, __half *A, __half *B, int m, int n, int k)
         __syncthreads();
     }
 
-    // Write the result back to C
     if (row < m && col < k)
         C[row * k + col] = sum;
 }
@@ -170,36 +166,37 @@ __global__ void matMulABT(__half *C, __half *A, __half *B, int m, int n, int k)
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // Allocate shared memory for tiles of A and B
+    int TILE_WIDTH = blockDim.x;
+
     extern __shared__ __half sharedMem[];
     __half* tileA = sharedMem;                            // Tile for matrix A
-    __half* tileB = tileA + blockDim.y * blockDim.x;      // Tile for transposed matrix B
+    __half* tileB = tileA + TILE_WIDTH * TILE_WIDTH;      // Tile for transposed matrix B
 
     // Accumulate result for this thread
     __half sum = __float2half(0.0f);
 
     // Loop over tiles
-    for (int t = 0; t < (n + blockDim.x - 1) / blockDim.x; ++t)
+    for (int t = 0; t < (n + TILE_WIDTH - 1) / TILE_WIDTH; ++t)
     {
         // Load a tile of A into shared memory
-        if (row < m && (t * blockDim.x + threadIdx.x) < n)
-            tileA[threadIdx.y * blockDim.x + threadIdx.x] = A[row * n + t * blockDim.x + threadIdx.x];
+        if (row < m && (t * TILE_WIDTH + threadIdx.x) < n)
+            tileA[threadIdx.y * TILE_WIDTH + threadIdx.x] = A[row * n + t * TILE_WIDTH + threadIdx.x];
         else
-            tileA[threadIdx.y * blockDim.x + threadIdx.x] = __float2half(0.0f);
+            tileA[threadIdx.y * TILE_WIDTH + threadIdx.x] = __float2half(0.0f);
 
         // Load a tile of B (transposed) into shared memory
-        if (col < k && (t * blockDim.x + threadIdx.x) < n)
-            tileB[threadIdx.y * blockDim.x + threadIdx.x] = B[col * n + t * blockDim.y + threadIdx.y];
+        if (col < k && (t * TILE_WIDTH + threadIdx.x) < n)
+            tileB[threadIdx.y * TILE_WIDTH + threadIdx.x] = B[col * n + t * TILE_WIDTH + threadIdx.y];
             
         else
-            tileB[threadIdx.y * blockDim.x + threadIdx.x] = __float2half(0.0f);
+            tileB[threadIdx.y * TILE_WIDTH + threadIdx.x] = __float2half(0.0f);
 
         __syncthreads();
 
         // Multiply the tiles and accumulate the result
-        for (int i = 0; i < blockDim.x; ++i)
+        for (int i = 0; i < TILE_WIDTH; ++i)
         {
-            sum = __hadd(sum, __hmul(tileA[threadIdx.y * blockDim.x + i], tileB[threadIdx.x + i * blockDim.x]));
+            sum = __hadd(sum, __hmul(tileA[threadIdx.y * TILE_WIDTH + i], tileB[threadIdx.x + i * TILE_WIDTH]));
         }
 
         __syncthreads();
