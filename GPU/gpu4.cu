@@ -320,19 +320,12 @@ __global__ void updateWeight2D(__half *W, __half *d_W, int m, int k, __half LEAR
 }
 
 // b(1xk) -= LR * d_b(1xk)
-__global__ void updateWeight1D(int bias, __half *d_b, int k, __half LEARNING_RATE)
+__global__ void updateWeight1D(__half *b, __half *d_b, int k, __half LEARNING_RATE)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (idx < k)
-    {
-        if (bias == 1)
-            const_bias1[idx] -= LEARNING_RATE * d_b[idx];
-        else if (bias == 2)
-            const_bias2[idx] -= LEARNING_RATE * d_b[idx];
-        else
-            const_bias3[idx] -= LEARNING_RATE * d_b[idx];
-    }
+        b[idx] -= LEARNING_RATE * d_b[idx];
 }
 
 // Initialize weight matrix W (size mxk)
@@ -511,16 +504,16 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     grid2.y = (unsigned int)ceil((float)128 / (float)bs2.y);
     grid2.x = (unsigned int)ceil((float)784 / (float)bs2.x);
     updateWeight2D<<<grid2, bs2>>>(nn->W1, nn->d_W1, 128, 784, LEARNING_RATE);
-    updateWeight1D<<<grid1, block1>>>(1, nn->d_b1, 128, LEARNING_RATE);
+    updateWeight1D<<<grid1, block1>>>(const_bias1, nn->d_b1, 128, LEARNING_RATE);
 
     grid2.x = (unsigned int)ceil((float)128 / (float)bs2.x);
     updateWeight2D<<<grid2, bs2>>>(nn->W2, nn->d_W2, 128, 128, LEARNING_RATE);
-    updateWeight1D<<<grid1, block1>>>(2, nn->d_b2, 128, LEARNING_RATE);
+    updateWeight1D<<<grid1, block1>>>(const_bias2, nn->d_b2, 128, LEARNING_RATE);
 
     grid2.y = (unsigned int)ceil((float)10 / (float)bs2.y);
     block1.x = 10;
     updateWeight2D<<<grid2, bs2 >>>(nn->W3, nn->d_W3, 10, 128, LEARNING_RATE);
-    updateWeight1D<<<grid1, block1>>>(3, nn->d_b3, 10, LEARNING_RATE);
+    updateWeight1D<<<grid1, block1>>>(const_bias3, nn->d_b3, 10, LEARNING_RATE);
 
     CHECK(cudaDeviceSynchronize());
 }
