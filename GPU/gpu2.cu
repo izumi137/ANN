@@ -346,7 +346,7 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     grid2.y = (bs2.y + BATCH_SIZE- 1) / bs2.y;
     grid2.x = (bs2.x + 10- 1) / bs2.x;
     matSub<<<grid2, bs2>>>(nn->d_Z3, nn->Y_pred, Y_true, BATCH_SIZE, 10);
-    // d_W3 = d_Z3^T @ A2 / 32 = (32x10)^T @ (32x128) = (10x128)
+    // d_W3 = d_Z3^T @ A2 = (32x10)^T @ (32x128) = (10x128)
     grid2.y = (bs2.y + 10- 1) / bs2.y;
     grid2.x = (bs2.x + 128- 1) / bs2.x;
     matMulATB<<<grid2, bs2>>>(nn->d_W3, nn->d_Z3, nn->A2, 10, BATCH_SIZE, 128);
@@ -362,7 +362,7 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     matMulAB<<<grid2, bs2>>>(nn->d_A2, nn->d_Z3, nn->W3, BATCH_SIZE, 10, 128);
     // d_Z2 = d_relu(d_A2, Z2) = d_relu(32x128) = (32x128)
     drelu<<<grid2, bs2>>>(nn->d_Z2, nn->d_A2, nn->Z2, BATCH_SIZE, 128);
-    // d_W2 = d_Z2^T @ A_1 / 32 = (32x128)^T @ (32x128) = (128x128)
+    // d_W2 = d_Z2^T @ A_1 = (32x128)^T @ (32x128) = (128x128)
     grid2.y = (bs2.y + 128- 1) / bs2.y;
     matMulATB<<<grid2, bs2>>>(nn->d_W2, nn->d_Z2, nn->A1, 128, BATCH_SIZE, 128);
     // d_b2 = sum_batch(d_Z2) = sum_batch(32x128) = (1, 128)  
@@ -376,7 +376,7 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     matMulAB<<<grid2, bs2>>>(nn->d_A1, nn->d_Z2, nn->W2, BATCH_SIZE, 128, 128);
     // d_Z1 = d_relu(d_A1, Z1) = d_relu(32x128) = (32x128)
     drelu<<<grid2, bs2>>>(nn->d_Z1, nn->d_A1, nn->Z1, BATCH_SIZE, 128);
-    // d_W1 = d_Z1^T @ X / 32 = (32x128)^T @ (32x784) = (128x784)
+    // d_W1 = d_Z1^T @ X = (32x128)^T @ (32x784) = (128x784)
     grid2.y = (bs2.y + 128- 1) / bs2.y;
     grid2.x = (bs2.x + 784- 1) / bs2.x;
     matMulATB<<<grid2, bs2>>>(nn->d_W1, nn->d_Z1, X, 128, BATCH_SIZE, 784);
