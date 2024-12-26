@@ -400,7 +400,17 @@ void backward(ANN *nn, float *X, float *Y_true, int BATCH_SIZE, dim3 bs2 = dim3(
     updateWeight1D<<<grid1, bs1>>>(nn->b3, nn->d_b3, 10, LEARNING_RATE);
 }
 
-void eval(ANN *nn, int mode, float* X, float *Y_true, dim3 bs2 = dim3(32, 32), dim3 bs1 = dim3(32))
+void write_log(const char* filename, float* data, int size, bool end = false)
+{
+    FILE* file = fopen(filename, "a");
+    for (int i = 0; i < size; i++)
+        fprintf(file, "%f ", data[i]);
+    if (end == true)
+        fprintf(file, "\n");
+    fclose(file);
+}
+
+void eval(ANN *nn, int mode, float* X, float *Y_true, dim3 bs2 = dim3(32, 32), dim3 bs1 = dim3(32), bool save_log = false)
 {
     int size = 10000;
     float *Y_pred;
@@ -441,6 +451,13 @@ void eval(ANN *nn, int mode, float* X, float *Y_true, dim3 bs2 = dim3(32, 32), d
     loss /= size;
     printf("Loss: %.4f, Accuracy: %.2f%%\n", loss, acc);
     free(Y_pred);
+    if (save_log == true)
+    {
+        float data[2];
+        data[0] = acc;
+        data[1] = loss;
+        write_log("log.txt", data, 2);
+    }
 }
 
 void train(ANN *nn, int EPOCHS, int BATCH_SIZE, float *Y_train, float *Y_valid, float *Y_test, dim3 bs2 = dim3(32, 32), dim3 bs1 = dim3(32)) 
@@ -478,8 +495,11 @@ void train(ANN *nn, int EPOCHS, int BATCH_SIZE, float *Y_train, float *Y_valid, 
     
     printf("Finished training\nTest: ");
     total_time /= EPOCHS;
-    eval(nn, 1, nn->X_test, Y_test, bs2, bs1);
+    eval(nn, 1, nn->X_test, Y_test, bs2, bs1, true); // Save log
     printf("\nAverage time per epoch: %f ms\n", total_time);
+    float data[1];
+    data[0] = total_time;
+    write_log("log.txt", data, 1, true);
 }
 
 
