@@ -6,14 +6,15 @@
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 
-__constant__ __half const_bias1[128], const_bias2[128], const_bias3[10]; // Bias 128, 128, 10
+__constant__ __half const_bias1[128+1], const_bias2[128+1], const_bias3[10+1]; // Bias 128, 128, 10
+__constant__ __half d_b1[128+1], d_b2[128+1], d_b3[10+1];
 
 typedef struct {
     __half *W1, *W2, *W3;
     __half *d_W1, *d_W2, *d_W3;
 
     // __half *b1, *b2, *b3;
-    __half *d_b1, *d_b2, *d_b3;
+    // __half *d_b1, *d_b2, *d_b3;
 
     __half *Z1, *Z2, *Z3, *A1, *A2;
     __half *d_Z1, *d_Z2, *d_Z3, *d_A1, *d_A2;
@@ -293,7 +294,7 @@ __global__ void softmax(__half *A, __half *Z, int BATCH_SIZE, int length)
 }
 
 // d_b = sumBatch(d_Z) = sum_batch(BATCHSIZExLENGTH) = (1xLENGTH)
-__global__ void sumBatch(__half *d_b, __half *d_Z, int BATCH_SIZE, int length)
+__global__ void sumBatch(int bias, __half *d_Z, int BATCH_SIZE, int length)
 {
     int l = blockIdx.x * blockDim.x + threadIdx.x;
     if (l < length) 
@@ -301,8 +302,12 @@ __global__ void sumBatch(__half *d_b, __half *d_Z, int BATCH_SIZE, int length)
         __half sum = 0.0f;
         for (int i = 0; i < BATCH_SIZE; ++i)
             sum += d_Z[i * length + l];
-
-        d_b[l] = sum;
+        if (bias == 1)
+            d_b1[l] = sum;
+        else if (bias == 2)
+            d_b2[l] = sum;
+        else
+            d_b3[l] = sum;
     }
 }
 
@@ -320,18 +325,18 @@ __global__ void updateWeight2D(__half *W, __half *d_W, int m, int k, __half LEAR
 }
 
 // b(1xk) -= LR * d_b(1xk)
-__global__ void updateWeight1D(int bias, __half *d_b, int k, __half LEARNING_RATE)
+__global__ void updateWeight1D(int bias, int k, __half LEARNING_RATE)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (idx < k)
     {
         if (bias == 1)
-            const_bias1[idx] -= LEARNING_RATE * d_b[idx];
+            const_bias1[idx] -= LEARNING_RATE * d_b1[idx];
         else if (bias == 2)
-            const_bias2[idx] -= LEARNING_RATE * d_b[idx];
+            const_bias2[idx] -= LEARNING_RATE * d_b2[idx];
         else
-            const_bias3[idx] -= LEARNING_RATE * d_b[idx];
+            const_bias3[idx] -= LEARNING_RATE * d_b3[idx];
     }
 }
 
@@ -387,9 +392,9 @@ void initANN(ANN *nn, __half *X_train, __half *Y_train, __half *X_valid, __half 
     // CHECK(cudaMalloc(&nn->b2, 128 * sizeof(__half)));
     // CHECK(cudaMalloc(&nn->b3, 10  * sizeof(__half)));
 
-    CHECK(cudaMalloc(&nn->d_b1, 128 * sizeof(__half)));
-    CHECK(cudaMalloc(&nn->d_b2, 128 * sizeof(__half)));
-    CHECK(cudaMalloc(&nn->d_b3, 10  * sizeof(__half)));
+    // CHECK(cudaMalloc(&nn->d_b1, 128 * sizeof(__half)));
+    // CHECK(cudaMalloc(&nn->d_b2, 128 * sizeof(__half)));
+    // CHECK(cudaMalloc(&nn->d_b3, 10  * sizeof(__half)));
 
     CHECK(cudaMalloc(&nn->W1, 128 * 784 * sizeof(__half)));
     CHECK(cudaMalloc(&nn->W2, 128 * 128 * sizeof(__half)));
@@ -475,7 +480,7 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     matMulATB<<<grid2, bs2, sharedMemSize>>>(nn->d_W3, nn->d_Z3, nn->A2, 10, BATCH_SIZE, 128);
     // d_b3 = sum_batch(d_Z3) = sum_batch(32x10) = (1, 10)
     block1.x = 10;
-    sumBatch<<<grid1, block1>>>(nn->d_b3, nn->d_Z3, BATCH_SIZE, 10);
+    sumBatch<<<grid1, block1>>>(3, nn->d_Z3, BATCH_SIZE, 10);
 
     // Layer: Hidden 2
     // d_A2 = d_Z3 @ W3 = (32x10) x (10x128) = (32x128)
@@ -489,7 +494,7 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     matMulATB<<<grid2, bs2, sharedMemSize>>>(nn->d_W2, nn->d_Z2, nn->A1, 128, BATCH_SIZE, 128);
     // d_b2 = sum_batch(d_Z2) = sum_batch(32x128) = (1, 128)  
     block1.x = 128;
-    sumBatch<<<grid1, block1>>>(nn->d_b2, nn->d_Z2, BATCH_SIZE, 128);
+    sumBatch<<<grid1, block1>>>(2, nn->d_Z2, BATCH_SIZE, 128);
 
     // Layer: Hidden 1
     // d_A1 = d_Z2 @ W2 = (32x128) x (128x128) = (32x128)
@@ -504,23 +509,23 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     matMulATB<<<grid2, bs2, sharedMemSize>>>(nn->d_W1, nn->d_Z1, X, 128, BATCH_SIZE, 784);
     // d_b1 = sum_batch(d_Z1) = sum_batch(32x128) = (1, 128)  
     block1.x = 128;
-    sumBatch<<<grid1, block1>>>(nn->d_b1, nn->d_Z1, BATCH_SIZE, 128);
+    sumBatch<<<grid1, block1>>>(1, nn->d_Z1, BATCH_SIZE, 128);
 
     // UPDATE WEIGHTS
     float LEARNING_RATE = 0.001f;
     grid2.y = (unsigned int)ceil((float)128 / (float)bs2.y);
     grid2.x = (unsigned int)ceil((float)784 / (float)bs2.x);
     updateWeight2D<<<grid2, bs2>>>(nn->W1, nn->d_W1, 128, 784, LEARNING_RATE);
-    updateWeight1D<<<grid1, block1>>>(1, nn->d_b1, 128, LEARNING_RATE);
+    updateWeight1D<<<grid1, block1>>>(1, 128, LEARNING_RATE);
 
     grid2.x = (unsigned int)ceil((float)128 / (float)bs2.x);
     updateWeight2D<<<grid2, bs2>>>(nn->W2, nn->d_W2, 128, 128, LEARNING_RATE);
-    updateWeight1D<<<grid1, block1>>>(2, nn->d_b2, 128, LEARNING_RATE);
+    updateWeight1D<<<grid1, block1>>>(2, 128, LEARNING_RATE);
 
     grid2.y = (unsigned int)ceil((float)10 / (float)bs2.y);
     block1.x = 10;
     updateWeight2D<<<grid2, bs2 >>>(nn->W3, nn->d_W3, 10, 128, LEARNING_RATE);
-    updateWeight1D<<<grid1, block1>>>(3, nn->d_b3, 10, LEARNING_RATE);
+    updateWeight1D<<<grid1, block1>>>(3, 10, LEARNING_RATE);
 
     CHECK(cudaDeviceSynchronize());
 }
@@ -671,9 +676,9 @@ int main(int argc, char ** argv)
     CHECK(cudaFree(nn.d_W1));
     CHECK(cudaFree(nn.d_W2));
     CHECK(cudaFree(nn.d_W3));
-    CHECK(cudaFree(nn.d_b1));
-    CHECK(cudaFree(nn.d_b2));
-    CHECK(cudaFree(nn.d_b3));
+    // CHECK(cudaFree(nn.d_b1));
+    // CHECK(cudaFree(nn.d_b2));
+    // CHECK(cudaFree(nn.d_b3));
     CHECK(cudaFree(nn.d_Z1));
     CHECK(cudaFree(nn.d_Z2));
     CHECK(cudaFree(nn.d_Z3));
