@@ -335,7 +335,7 @@ __global__ void updateWeight1D(int bias, int k, __half LEARNING_RATE)
             const_bias1[idx] -= LEARNING_RATE * d_b1[idx];
         else if (bias == 2)
             const_bias2[idx] -= LEARNING_RATE * d_b2[idx];
-        else
+        else if (bias == 3)
             const_bias3[idx] -= LEARNING_RATE * d_b3[idx];
     }
 }
