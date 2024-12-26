@@ -401,7 +401,6 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     updateWeight2D<<<grid2, bs2 >>>(nn->W3, nn->d_W3, 10, 128, LEARNING_RATE);
     updateWeight1D<<<grid1, bs1>>>(nn->b3, nn->d_b3, 10, LEARNING_RATE);
 
-    CHECK(cudaDeviceSynchronize());
 }
 
 void eval(ANN *nn, int mode, __half* X, __half *Y_true, dim3 bs2 = dim3(32, 32), dim3 bs1 = dim3(32))
