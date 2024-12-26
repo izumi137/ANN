@@ -6,13 +6,11 @@
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 
-__constant__ __half const_bias1[128], const_bias2[128], const_bias3[10]; // Bias 128, 128, 10
-
 typedef struct {
     __half *W1, *W2, *W3;
     __half *d_W1, *d_W2, *d_W3;
 
-    // __half *b1, *b2, *b3;
+    __half *b1, *b2, *b3;
     __half *d_b1, *d_b2, *d_b3;
 
     __half *Z1, *Z2, *Z3, *A1, *A2;
@@ -212,21 +210,13 @@ __global__ void matMulABT(__half *C, __half *A, __half *B, int m, int n, int k)
 }
 
 // Z(mxk) + b(1xk)
-__global__ void addBias(__half *Z, int bias, int m, int k) 
+__global__ void addBias(__half *Z, __half *b, int m, int k) 
 {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (row < m && col < k)
-    {
-        if (bias == 1)
-            Z[row * k + col] += const_bias1[col];
-        else if (bias == 2)
-            Z[row * k + col] += const_bias2[col];
-        else
-            Z[row * k + col] += const_bias3[col];
-    }
-        
+        Z[row * k + col] += b[col];
 }
 
 // C(mxk) = A(mxk) - B(mxk)
@@ -341,27 +331,16 @@ void initWeight(__half *W, int m, int k) {
 
 void initANN(ANN *nn, __half *X_train, __half *Y_train, __half *X_valid, __half *Y_valid, __half *X_test, __half *Y_test, int BATCH_SIZE)
 {
-    __half *W1, *W2, *W3, *b, *b2;
+    __half *W1, *W2, *W3;
 
     W1 = (__half*)malloc(128 * 784 * sizeof(__half));
     W2 = (__half*)malloc(128 * 128 * sizeof(__half));
     W3 = (__half*)malloc(10  * 128 * sizeof(__half));
-    b = (__half*)malloc(128 * sizeof(__half));
-    b2 = (__half*)malloc(10 * sizeof(__half));
-
-    // Init bias 0
-    for (int i = 0; i < 128; i++) {
-        b[i] = __float2half(0.0f); 
-    }
-
-    for (int i = 0; i < 10; i++) {
-        b2[i] = __float2half(0.0f); 
-    }
 
     initWeight(W1, 128, 784);
     initWeight(W2, 128, 128);
     initWeight(W3, 10 , 128);
-    
+
     CHECK(cudaMalloc(&nn->Y_pred, 50000 * 10  * sizeof(__half)));
 
     CHECK(cudaMalloc(&nn->Z1, 50000 * 128 * sizeof(__half)));
@@ -376,9 +355,9 @@ void initANN(ANN *nn, __half *X_train, __half *Y_train, __half *X_valid, __half 
     CHECK(cudaMalloc(&nn->d_A1, BATCH_SIZE * 128 * sizeof(__half)));
     CHECK(cudaMalloc(&nn->d_A2, BATCH_SIZE * 128 * sizeof(__half)));
 
-    // CHECK(cudaMalloc(&nn->b1, 128 * sizeof(__half)));
-    // CHECK(cudaMalloc(&nn->b2, 128 * sizeof(__half)));
-    // CHECK(cudaMalloc(&nn->b3, 10  * sizeof(__half)));
+    CHECK(cudaMalloc(&nn->b1, 128 * sizeof(__half)));
+    CHECK(cudaMalloc(&nn->b2, 128 * sizeof(__half)));
+    CHECK(cudaMalloc(&nn->b3, 10  * sizeof(__half)));
 
     CHECK(cudaMalloc(&nn->d_b1, 128 * sizeof(__half)));
     CHECK(cudaMalloc(&nn->d_b2, 128 * sizeof(__half)));
@@ -410,13 +389,9 @@ void initANN(ANN *nn, __half *X_train, __half *Y_train, __half *X_valid, __half 
     CHECK(cudaMemcpy(nn->Y_valid, Y_valid, 10000 * 10 * sizeof(__half), cudaMemcpyHostToDevice));
     CHECK(cudaMemcpy(nn->Y_test,  Y_test,  10000 * 10 * sizeof(__half), cudaMemcpyHostToDevice));
 
-    // CHECK(cudaMemset(nn->b1, 0, 128 * sizeof(__half)));
-    // CHECK(cudaMemset(nn->b2, 0, 128 * sizeof(__half)));
-    // CHECK(cudaMemset(nn->b3, 0, 10  * sizeof(__half)));
-
-    CHECK(cudaMemcpyToSymbol(const_bias1, b, 128 * sizeof(__half)));
-    CHECK(cudaMemcpyToSymbol(const_bias2, b, 128 * sizeof(__half)));
-    CHECK(cudaMemcpyToSymbol(const_bias3, b2, 10 * sizeof(__half)));
+    CHECK(cudaMemset(nn->b1, 0, 128 * sizeof(__half)));
+    CHECK(cudaMemset(nn->b2, 0, 128 * sizeof(__half)));
+    CHECK(cudaMemset(nn->b3, 0, 10  * sizeof(__half)));
 
     free(W1);
     free(W2);
@@ -427,25 +402,27 @@ void initANN(ANN *nn, __half *X_train, __half *Y_train, __half *X_valid, __half 
 void forward(ANN *nn, __half *X, int BATCH_SIZE, dim3 bs2 = dim3(32, 32), dim3 bs1 = dim3(32))
 {   
     dim3 grid1(1), grid2(1, 1);
+    bs2.y = 64;
+    bs2.x = 16;
     int sharedMemSize = (bs2.y * bs2.x * 2) * sizeof(__half);
     // Z1 = X @ W1^T + b1 = (32x784) @ (128x784)^T = (32x128) 
     grid2.y = (unsigned int)ceil((float)BATCH_SIZE / (float)bs2.y);
     grid2.x = (unsigned int)ceil((float)128 / (float)bs2.x);
     matMulABT<<<grid2, bs2, sharedMemSize>>>(nn->Z1, X, nn->W1, BATCH_SIZE, 784, 128);
-    addBias<<<grid2, bs2>>>(nn->Z1, 1, BATCH_SIZE, 128); //add bias 1
+    addBias<<<grid2, bs2>>>(nn->Z1, nn->b1, BATCH_SIZE, 128);
     // A1 = relu(Z1) = (32x128)
     relu<<<grid2, bs2>>>(nn->A1, nn->Z1, BATCH_SIZE, 128);
 
     // Z2 = A1 @ W2^T + b2 = (32x128) @ (128x128)^T = (32x128)
     matMulABT<<<grid2, bs2, sharedMemSize>>>(nn->Z2, nn->A1, nn->W2, BATCH_SIZE, 128, 128);
-    addBias<<<grid2, bs2>>>(nn->Z2, 2, BATCH_SIZE, 128); // add bias 2
+    addBias<<<grid2, bs2>>>(nn->Z2, nn->b2, BATCH_SIZE, 128);
     // A2 = relu(Z2) = (32x128)
     relu<<<grid2, bs2>>>(nn->A2, nn->Z2, BATCH_SIZE, 128);
 
     // Z3 = A2 @ W3^T + b3 = (32x128) @ (10x128)^T = (32x10)
     grid2.x = (unsigned int)ceil((float)10 / (float)bs2.x);
     matMulABT<<<grid2, bs2, sharedMemSize>>>(nn->Z3, nn->A2, nn->W3, BATCH_SIZE, 128, 10);
-    addBias<<<grid2, bs2>>>(nn->Z3, 3, BATCH_SIZE, 10); // add bias 3
+    addBias<<<grid2, bs2>>>(nn->Z3, nn->b3, BATCH_SIZE, 10);
     // Y_pred = softmax(Z3) = (32x10)
     grid1.x = (unsigned int)(ceil((float)BATCH_SIZE / (float)bs1.x));
     softmax<<<grid1, bs1>>>(nn->Y_pred, nn->Z3, BATCH_SIZE, 10);
@@ -504,16 +481,16 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     grid2.y = (unsigned int)ceil((float)128 / (float)bs2.y);
     grid2.x = (unsigned int)ceil((float)784 / (float)bs2.x);
     updateWeight2D<<<grid2, bs2>>>(nn->W1, nn->d_W1, 128, 784, LEARNING_RATE);
-    updateWeight1D<<<grid1, block1>>>(const_bias1, nn->d_b1, 128, LEARNING_RATE);
+    updateWeight1D<<<grid1, block1>>>(nn->b1, nn->d_b1, 128, LEARNING_RATE);
 
     grid2.x = (unsigned int)ceil((float)128 / (float)bs2.x);
     updateWeight2D<<<grid2, bs2>>>(nn->W2, nn->d_W2, 128, 128, LEARNING_RATE);
-    updateWeight1D<<<grid1, block1>>>(const_bias2, nn->d_b2, 128, LEARNING_RATE);
+    updateWeight1D<<<grid1, block1>>>(nn->b2, nn->d_b2, 128, LEARNING_RATE);
 
     grid2.y = (unsigned int)ceil((float)10 / (float)bs2.y);
     block1.x = 10;
     updateWeight2D<<<grid2, bs2 >>>(nn->W3, nn->d_W3, 10, 128, LEARNING_RATE);
-    updateWeight1D<<<grid1, block1>>>(const_bias3, nn->d_b3, 10, LEARNING_RATE);
+    updateWeight1D<<<grid1, block1>>>(nn->b3, nn->d_b3, 10, LEARNING_RATE);
 
     CHECK(cudaDeviceSynchronize());
 }
@@ -652,9 +629,9 @@ int main(int argc, char ** argv)
     CHECK(cudaFree(nn.W1));
     CHECK(cudaFree(nn.W2));
     CHECK(cudaFree(nn.W3));
-    // CHECK(cudaFree(nn.b1));
-    // CHECK(cudaFree(nn.b2));
-    // CHECK(cudaFree(nn.b3));
+    CHECK(cudaFree(nn.b1));
+    CHECK(cudaFree(nn.b2));
+    CHECK(cudaFree(nn.b3));
     CHECK(cudaFree(nn.Z1));
     CHECK(cudaFree(nn.Z2));
     CHECK(cudaFree(nn.Z3));
