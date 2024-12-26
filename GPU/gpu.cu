@@ -519,9 +519,9 @@ int main(int argc, char ** argv)
     X_test = (float *)malloc(784 * 10000 * sizeof(float));
     Y_test = (float *)malloc(10  * 10000 * sizeof(float));
 
-    readData("train.txt", X_train, Y_train, 50000); 
-    readData("valid.txt", X_valid, Y_valid, 10000);
-    readData("test.txt",  X_test,  Y_test,  10000);
+    readData("..//train.txt", X_train, Y_train, 50000); 
+    readData("..//valid.txt", X_valid, Y_valid, 10000);
+    readData("..//test.txt",  X_test,  Y_test,  10000);
 
     ANN nn;
     initANN(&nn, X_train, Y_train, X_valid, Y_valid, X_test, Y_test, BATCH_SIZE);
