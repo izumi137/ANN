@@ -71,7 +71,14 @@ def save_image_to_txt(image, label, file_path):
 
 save_image_to_txt(train_images[0], train_labels[0], "./fashion_mnist_sample_image.txt")
 print("Saved sample image to fashion_mnist_sample_image.txt")
+import shutil
 
+# Đường dẫn đến thư mục fashion_mnist
+folder_path = "fashion_mnist"
+
+# Xóa toàn bộ thư mục và các file con
+shutil.rmtree(folder_path)
+print(f"Đã xóa thư mục {folder_path} và tất cả các file con.")
 
 
 # Save all images to a single .txt file
