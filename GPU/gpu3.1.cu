@@ -212,7 +212,7 @@ __global__ void matMulABT(__half *C, __half *A, __half *B, int m, int n, int k)
 }
 
 // Z(mxk) + b(1xk)
-__global__ void addBias(__half *Z, int bias = 1, int m, int k) 
+__global__ void addBias(__half *Z, int bias, int m, int k) 
 {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
