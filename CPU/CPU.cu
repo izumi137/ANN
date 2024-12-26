@@ -81,8 +81,9 @@ int main(int argc, char ** argv)
     //--------------------Train-----------------------------
     cout << "Training..." << endl;
     float loss = train(x_train, y_train, x_valid, y_valid, cfg, model, ce);
-    end = std::chrono::steady_clock::now();
-    std::cout << "Total training time: " << (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.0f << std::endl;
+    end = chrono::steady_clock::now();
+    float totaltime = (chrono::duration_cast<chrono::microseconds>(end - begin).count()) / 1000000.0f;
+    cout << "Total training time: " << totaltime << " s" << endl;
 
 
     //--------------------Test-----------------------------
@@ -106,7 +107,7 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    outfile << "CPU: " << "AVG Loss: " << loss << ", " << "Test accuracy: " << acc << endl;
+    outfile << "CPU: " << "AVG Loss: " << loss << ", " << "Test accuracy: " << acc  << ", " << "AVG epoch's runtime:  " << totaltime/cfg.epochs << endl;
     outfile.close();
     return 0;
 }

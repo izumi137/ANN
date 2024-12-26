@@ -543,7 +543,7 @@ void train(ANN *nn, int EPOCHS, int BATCH_SIZE, __half *Y_train, __half *Y_valid
 {
     float total_time = 0.0f;
     int num_batches = floor(50000 / BATCH_SIZE);
-    for (int epoch = 0; epoch < EPOCHS; epoch++) 
+    for (int epoch = 1; epoch < EPOCHS+1; epoch++) 
     {
         GpuTimer timer;
         timer.Start();

@@ -6,6 +6,8 @@
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 
+__constant__ __half const_bias1[128], const_bias2[128], const_bias3[10]; // Bias 128, 128, 10
+
 typedef struct {
     __half *W1, *W2, *W3;
     __half *d_W1, *d_W2, *d_W3;
@@ -73,62 +75,158 @@ struct GpuTimer
 }
 
 
-// C(mxk) = A(mxn) @ B(nxk)
+// C(mxk) = A(mxn) @ B(nxk) / d
 __global__ void matMulAB(__half *C, __half *A, __half *B, int m, int n, int k)
 {
+    // Block and thread indices
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (row < m && col < k)
-    {
-        __half sum = 0.0f;
-        for (int i = 0; i < n; ++i) 
-            sum += A[row * n + i] * B[i * k + col];
+    // Allocate shared memory for tiles of A and B
+    extern __shared__ __half sharedMem[];
+    __half* tileA = sharedMem;                                  // Tile for matrix A
+    __half* tileB = tileA + blockDim.y * blockDim.x;            // Tile for matrix B
 
-        C[row * k + col] = sum;
+    // Accumulator for the result
+    __half sum = __float2half(0.0f);
+
+    // Iterate over tiles
+    for (int t = 0; t < (n + blockDim.x - 1) / blockDim.x; ++t)
+    {
+        // Load tile of A into shared memory
+        if (row < m && (t * blockDim.x + threadIdx.x) < n)
+            tileA[threadIdx.y * blockDim.x + threadIdx.x] = A[row * n + t * blockDim.x + threadIdx.x];
+        else
+            tileA[threadIdx.y * blockDim.x + threadIdx.x] = __float2half(0.0f);
+
+        // Load tile of B into shared memory
+        if (col < k && (t * blockDim.y + threadIdx.y) < n)
+            tileB[threadIdx.y * blockDim.x + threadIdx.x] = B[(t * blockDim.y + threadIdx.y) * k + col];
+        else
+            tileB[threadIdx.y * blockDim.x + threadIdx.x] = __float2half(0.0f);
+
+        __syncthreads();
+
+        // Multiply the tiles and accumulate the result
+        for (int i = 0; i < blockDim.x; ++i)
+            sum = __hadd(sum, __hmul(tileA[threadIdx.y * blockDim.x + i], tileB[i * blockDim.x + threadIdx.x]));
+
+        __syncthreads();
     }
+
+    // Write the result back to C
+    if (row < m && col < k)
+        C[row * k + col] = sum;
 }
 
-// C(mxk) = A(nxm)^T @ B(nxk) / d
+// C(mxk) = A(nxm)^T @ B(nxk)
 __global__ void matMulATB(__half *C, __half *A, __half *B, int m, int n, int k)
 {
+    // Block and thread indices
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (row < m && col < k)
-    {
-        __half sum = 0.0f;
-        for (int i = 0; i < n; ++i) 
-            sum += A[i * m + row] * B[i * k + col];
+    // Allocate shared memory for tiles of A and B
+    extern __shared__ __half sharedMem[];
+    __half* tileA = sharedMem;                            // Tile for transposed A
+    __half* tileB = tileA + blockDim.x * blockDim.y;      // Tile for matrix B
 
-        C[row * k + col] = sum;
+    // Accumulator for the result
+    __half sum = __float2half(0.0f);
+
+    // Loop over tiles
+    for (int t = 0; t < (n + blockDim.x - 1) / blockDim.x; ++t)
+    {
+        // Load a tile of transposed A (A^T) into shared memory
+        if (row < m && (t * blockDim.x + threadIdx.x) < n)
+            tileA[threadIdx.x * blockDim.y + threadIdx.y] = A[(t * blockDim.x + threadIdx.x) * m + row];
+        else
+            tileA[threadIdx.x * blockDim.y + threadIdx.y] = __float2half(0.0f);
+
+        // Load a tile of B into shared memory
+        if (col < k && (t * blockDim.y + threadIdx.y) < n)
+            tileB[threadIdx.x * blockDim.y + threadIdx.y] = B[(t * blockDim.y + threadIdx.y) * k + col];
+        else
+            tileB[threadIdx.x * blockDim.y + threadIdx.y] = __float2half(0.0f);
+
+        __syncthreads();
+
+        // Multiply the tiles and accumulate the result
+        for (int i = 0; i < blockDim.x; ++i)
+        {
+            sum = __hadd(sum, __hmul(tileA[i * blockDim.y + threadIdx.y], tileB[threadIdx.x * blockDim.y + i]));
+        }
+
+        __syncthreads();
     }
+
+    // Write the result back to C
+    if (row < m && col < k)
+        C[row * k + col] = sum;
 }
 
-// C(mxk) = A(mxn) @ B(kxn)^T / d
+// C(mxk) = A(mxn) @ B(kxn)^T
 __global__ void matMulABT(__half *C, __half *A, __half *B, int m, int n, int k)
 {
+    // Block and thread indices
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (row < m && col < k)
-    {
-        __half sum = 0.0f;
-        for (int i = 0; i < n; ++i) 
-            sum += A[row * n + i] * B[col * n + i];
+    // Allocate shared memory for tiles of A and B
+    extern __shared__ __half sharedMem[];
+    __half* tileA = sharedMem;                            // Tile for matrix A
+    __half* tileB = tileA + blockDim.y * blockDim.x;      // Tile for transposed matrix B
 
-        C[row * k + col] = sum;
+    // Accumulate result for this thread
+    __half sum = __float2half(0.0f);
+
+    // Loop over tiles
+    for (int t = 0; t < (n + blockDim.x - 1) / blockDim.x; ++t)
+    {
+        // Load a tile of A into shared memory
+        if (row < m && (t * blockDim.x + threadIdx.x) < n)
+            tileA[threadIdx.y * blockDim.x + threadIdx.x] = A[row * n + t * blockDim.x + threadIdx.x];
+        else
+            tileA[threadIdx.y * blockDim.x + threadIdx.x] = __float2half(0.0f);
+
+        // Load a tile of B (transposed) into shared memory
+        if (col < k && (t * blockDim.y + threadIdx.y) < n)
+            tileB[threadIdx.y * blockDim.x + threadIdx.x] = B[col * n + t * blockDim.y + threadIdx.y];
+        else
+            tileB[threadIdx.y * blockDim.x + threadIdx.x] = __float2half(0.0f);
+
+        __syncthreads();
+
+        // Multiply the tiles and accumulate the result
+        for (int i = 0; i < blockDim.x; ++i)
+        {
+            sum = __hadd(sum, __hmul(tileA[threadIdx.y * blockDim.x + i], tileB[threadIdx.x + i * blockDim.x]));
+        }
+
+        __syncthreads();
     }
+
+    // Write the result back to C
+    if (row < m && col < k)
+        C[row * k + col] = sum;
 }
 
 // Z(mxk) + b(1xk)
-__global__ void addBias(__half *Z, __half *b, int m, int k) 
+__global__ void addBias(__half *Z, int bias, int m, int k) 
 {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (row < m && col < k)
-        Z[row * k + col] += b[col];
+    {
+        if (bias == 1)
+            Z[row * k + col] += const_bias1[col];
+        else if (bias == 2)
+            Z[row * k + col] += const_bias2[col];
+        else
+            Z[row * k + col] += const_bias3[col];
+    }
+        
 }
 
 // C(mxk) = A(mxk) - B(mxk)
@@ -243,16 +341,27 @@ void initWeight(__half *W, int m, int k) {
 
 void initANN(ANN *nn, __half *X_train, __half *Y_train, __half *X_valid, __half *Y_valid, __half *X_test, __half *Y_test, int BATCH_SIZE)
 {
-    __half *W1, *W2, *W3;
+    __half *W1, *W2, *W3, *b, *b2;
 
     W1 = (__half*)malloc(128 * 784 * sizeof(__half));
     W2 = (__half*)malloc(128 * 128 * sizeof(__half));
     W3 = (__half*)malloc(10  * 128 * sizeof(__half));
+    b = (__half*)malloc(128 * sizeof(__half));
+    b2 = (__half*)malloc(10 * sizeof(__half));
+
+    // Init bias 0
+    for (int i = 0; i < 128; i++) {
+        b[i] = __float2half(0.0f); 
+    }
+
+    for (int i = 0; i < 10; i++) {
+        b2[i] = __float2half(0.0f); 
+    }
 
     initWeight(W1, 128, 784);
     initWeight(W2, 128, 128);
     initWeight(W3, 10 , 128);
-
+    
     CHECK(cudaMalloc(&nn->Y_pred, 50000 * 10  * sizeof(__half)));
 
     CHECK(cudaMalloc(&nn->Z1, 50000 * 128 * sizeof(__half)));
@@ -301,9 +410,13 @@ void initANN(ANN *nn, __half *X_train, __half *Y_train, __half *X_valid, __half 
     CHECK(cudaMemcpy(nn->Y_valid, Y_valid, 10000 * 10 * sizeof(__half), cudaMemcpyHostToDevice));
     CHECK(cudaMemcpy(nn->Y_test,  Y_test,  10000 * 10 * sizeof(__half), cudaMemcpyHostToDevice));
 
-    CHECK(cudaMemset(nn->b1, 0, 128 * sizeof(__half)));
-    CHECK(cudaMemset(nn->b2, 0, 128 * sizeof(__half)));
-    CHECK(cudaMemset(nn->b3, 0, 10  * sizeof(__half)));
+    // CHECK(cudaMemset(nn->b1, 0, 128 * sizeof(__half)));
+    // CHECK(cudaMemset(nn->b2, 0, 128 * sizeof(__half)));
+    // CHECK(cudaMemset(nn->b3, 0, 10  * sizeof(__half)));
+
+    CHECK(cudaMemcpyToSymbol(const_bias1, b, 128 * sizeof(__half)));
+    CHECK(cudaMemcpyToSymbol(const_bias2, b, 128 * sizeof(__half)));
+    CHECK(cudaMemcpyToSymbol(const_bias3, b2, 10 * sizeof(__half)));
 
     free(W1);
     free(W2);
@@ -314,24 +427,25 @@ void initANN(ANN *nn, __half *X_train, __half *Y_train, __half *X_valid, __half 
 void forward(ANN *nn, __half *X, int BATCH_SIZE, dim3 bs2 = dim3(32, 32), dim3 bs1 = dim3(32))
 {   
     dim3 grid1(1), grid2(1, 1);
+    int sharedMemSize = (bs2.y * bs2.x * 2) * sizeof(__half);
     // Z1 = X @ W1^T + b1 = (32x784) @ (128x784)^T = (32x128) 
     grid2.y = (unsigned int)ceil((float)BATCH_SIZE / (float)bs2.y);
     grid2.x = (unsigned int)ceil((float)128 / (float)bs2.x);
-    matMulABT<<<grid2, bs2>>>(nn->Z1, X, nn->W1, BATCH_SIZE, 784, 128);
-    addBias<<<grid2, bs2>>>(nn->Z1, nn->b1, BATCH_SIZE, 128);
+    matMulABT<<<grid2, bs2, sharedMemSize>>>(nn->Z1, X, nn->W1, BATCH_SIZE, 784, 128);
+    addBias<<<grid2, bs2>>>(nn->Z1, 1, BATCH_SIZE, 128); //add bias 1
     // A1 = relu(Z1) = (32x128)
     relu<<<grid2, bs2>>>(nn->A1, nn->Z1, BATCH_SIZE, 128);
 
     // Z2 = A1 @ W2^T + b2 = (32x128) @ (128x128)^T = (32x128)
-    matMulABT<<<grid2, bs2>>>(nn->Z2, nn->A1, nn->W2, BATCH_SIZE, 128, 128);
-    addBias<<<grid2, bs2>>>(nn->Z2, nn->b2, BATCH_SIZE, 128);
+    matMulABT<<<grid2, bs2, sharedMemSize>>>(nn->Z2, nn->A1, nn->W2, BATCH_SIZE, 128, 128);
+    addBias<<<grid2, bs2>>>(nn->Z2, 2, BATCH_SIZE, 128); // add bias 2
     // A2 = relu(Z2) = (32x128)
     relu<<<grid2, bs2>>>(nn->A2, nn->Z2, BATCH_SIZE, 128);
 
     // Z3 = A2 @ W3^T + b3 = (32x128) @ (10x128)^T = (32x10)
     grid2.x = (unsigned int)ceil((float)10 / (float)bs2.x);
-    matMulABT<<<grid2, bs2>>>(nn->Z3, nn->A2, nn->W3, BATCH_SIZE, 128, 10);
-    addBias<<<grid2, bs2>>>(nn->Z3, nn->b3, BATCH_SIZE, 10);
+    matMulABT<<<grid2, bs2, sharedMemSize>>>(nn->Z3, nn->A2, nn->W3, BATCH_SIZE, 128, 10);
+    addBias<<<grid2, bs2>>>(nn->Z3, 3, BATCH_SIZE, 10); // add bias 3
     // Y_pred = softmax(Z3) = (32x10)
     grid1.x = (unsigned int)(ceil((float)BATCH_SIZE / (float)bs1.x));
     softmax<<<grid1, bs1>>>(nn->Y_pred, nn->Z3, BATCH_SIZE, 10);
@@ -340,6 +454,7 @@ void forward(ANN *nn, __half *X, int BATCH_SIZE, dim3 bs2 = dim3(32, 32), dim3 b
 
 void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim3(32, 32), dim3 bs1 = dim3(32))
 {
+    int sharedMemSize = (bs2.y * bs2.x * 2) * sizeof(__half);
     dim3 grid1(1), grid2(1, 1);
     dim3 block1(1);
     // Layer: Output
@@ -350,7 +465,7 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     // d_W3 = d_Z3^T @ A2 / 32 = (32x10)^T @ (32x128) = (10x128)
     grid2.y = (unsigned int)ceil((float)10 / (float)bs2.y);
     grid2.x = (unsigned int)ceil((float)128 / (float)bs2.x);
-    matMulATB<<<grid2, bs2>>>(nn->d_W3, nn->d_Z3, nn->A2, 10, BATCH_SIZE, 128);
+    matMulATB<<<grid2, bs2, sharedMemSize>>>(nn->d_W3, nn->d_Z3, nn->A2, 10, BATCH_SIZE, 128);
     // d_b3 = sum_batch(d_Z3) = sum_batch(32x10) = (1, 10)
     block1.x = 10;
     sumBatch<<<grid1, block1>>>(nn->d_b3, nn->d_Z3, BATCH_SIZE, 10);
@@ -359,12 +474,12 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     // d_A2 = d_Z3 @ W3 = (32x10) x (10x128) = (32x128)
     grid2.y = (unsigned int)ceil((float)BATCH_SIZE / (float)bs2.y);
     grid2.x = (unsigned int)ceil((float)128 / (float)bs2.x);
-    matMulAB<<<grid2, bs2>>>(nn->d_A2, nn->d_Z3, nn->W3, BATCH_SIZE, 10, 128);
+    matMulAB<<<grid2, bs2, sharedMemSize>>>(nn->d_A2, nn->d_Z3, nn->W3, BATCH_SIZE, 10, 128);
     // d_Z2 = d_relu(d_A2, Z2) = d_relu(32x128) = (32x128)
     drelu<<<grid2, bs2>>>(nn->d_Z2, nn->d_A2, nn->Z2, BATCH_SIZE, 128);
     // d_W2 = d_Z2^T @ A_1 / 32 = (32x128)^T @ (32x128) = (128x128)
     grid2.y = (unsigned int)ceil((float)128 / (float)bs2.y);
-    matMulATB<<<grid2, bs2>>>(nn->d_W2, nn->d_Z2, nn->A1, 128, BATCH_SIZE, 128);
+    matMulATB<<<grid2, bs2, sharedMemSize>>>(nn->d_W2, nn->d_Z2, nn->A1, 128, BATCH_SIZE, 128);
     // d_b2 = sum_batch(d_Z2) = sum_batch(32x128) = (1, 128)  
     block1.x = 128;
     sumBatch<<<grid1, block1>>>(nn->d_b2, nn->d_Z2, BATCH_SIZE, 128);
@@ -373,13 +488,13 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     // d_A1 = d_Z2 @ W2 = (32x128) x (128x128) = (32x128)
     grid2.y = (unsigned int)ceil((float)BATCH_SIZE / (float)bs2.y);
     grid2.x = (unsigned int)ceil(128 / bs2.x);
-    matMulAB<<<grid2, bs2>>>(nn->d_A1, nn->d_Z2, nn->W2, BATCH_SIZE, 128, 128);
+    matMulAB<<<grid2, bs2, sharedMemSize>>>(nn->d_A1, nn->d_Z2, nn->W2, BATCH_SIZE, 128, 128);
     // d_Z1 = d_relu(d_A1, Z1) = d_relu(32x128) = (32x128)
     drelu<<<grid2, bs2>>>(nn->d_Z1, nn->d_A1, nn->Z1, BATCH_SIZE, 128);
     // d_W1 = d_Z1^T @ X / 32 = (32x128)^T @ (32x784) = (128x784)
     grid2.y = (unsigned int)ceil((float)128 / (float)bs2.y);
     grid2.x = (unsigned int)ceil((float)784 / (float)bs2.x);
-    matMulATB<<<grid2, bs2>>>(nn->d_W1, nn->d_Z1, X, 128, BATCH_SIZE, 784);
+    matMulATB<<<grid2, bs2, sharedMemSize>>>(nn->d_W1, nn->d_Z1, X, 128, BATCH_SIZE, 784);
     // d_b1 = sum_batch(d_Z1) = sum_batch(32x128) = (1, 128)  
     block1.x = 128;
     sumBatch<<<grid1, block1>>>(nn->d_b1, nn->d_Z1, BATCH_SIZE, 128);
