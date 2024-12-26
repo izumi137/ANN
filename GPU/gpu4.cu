@@ -136,7 +136,7 @@ __global__ void matMulATB(__half *C, __half *A, __half *B, int m, int n, int k)
     for (int t = 0; t < (n + blockDim.x - 1) / blockDim.x; ++t)
     {
         // Load a tile of transposed A (A^T) into shared memory
-        if (row < m && (t * blockDim.x + threadIdx.x) < n)
+        if (row < m && (t * blockDim.y + threadIdx.y) < n)
             tileA[threadIdx.x * blockDim.y + threadIdx.y] = A[(t * blockDim.x + threadIdx.x) * m + row];
         else
             tileA[threadIdx.x * blockDim.y + threadIdx.y] = __float2half(0.0f);
@@ -173,7 +173,7 @@ __global__ void matMulABT(__half *C, __half *A, __half *B, int m, int n, int k)
     // Allocate shared memory for tiles of A and B
     extern __shared__ __half sharedMem[];
     __half* tileA = sharedMem;                            // Tile for matrix A
-    __half* tileB = tileA + blockDim.x * blockDim.y;      // Tile for transposed matrix B
+    __half* tileB = tileA + blockDim.y * blockDim.x;      // Tile for transposed matrix B
 
     // Accumulate result for this thread
     __half sum = __float2half(0.0f);
@@ -188,8 +188,9 @@ __global__ void matMulABT(__half *C, __half *A, __half *B, int m, int n, int k)
             tileA[threadIdx.y * blockDim.x + threadIdx.x] = __float2half(0.0f);
 
         // Load a tile of B (transposed) into shared memory
-        if (col < k && (t * blockDim.y + threadIdx.y) < n)
+        if (col < k && (t * blockDim.x + threadIdx.x) < n)
             tileB[threadIdx.y * blockDim.x + threadIdx.x] = B[col * n + t * blockDim.y + threadIdx.y];
+            
         else
             tileB[threadIdx.y * blockDim.x + threadIdx.x] = __float2half(0.0f);
 
@@ -410,6 +411,7 @@ void forward(ANN *nn, __half *X, int BATCH_SIZE, dim3 bs2 = dim3(32, 32), dim3 b
     // grid2.x = (unsigned int)ceil((float)128 / (float)bs2.x);
     grid2.y = (bs2.y + BATCH_SIZE - 1) / bs2.y;
     grid2.x = (bs2.x + 128 - 1) / bs2.x;
+    sharedMemSize = (bs2.y * bs2.x * 2 + 1) * sizeof(__half);
     matMulABT<<<grid2, bs2, sharedMemSize>>>(nn->Z1, X, nn->W1, BATCH_SIZE, 784, 128);
     addBias<<<grid2, bs2>>>(nn->Z1, nn->b1, BATCH_SIZE, 128);
     // A1 = relu(Z1) = (32x128)
@@ -424,10 +426,12 @@ void forward(ANN *nn, __half *X, int BATCH_SIZE, dim3 bs2 = dim3(32, 32), dim3 b
     // Z3 = A2 @ W3^T + b3 = (32x128) @ (10x128)^T = (32x10)
     // grid2.x = (unsigned int)ceil((float)10 / (float)bs2.x);
     grid2.x = (bs2.x + 10 - 1) / bs2.x;
+    sharedMemSize = (bs2.y * bs2.x * 2 + 1) * sizeof(__half);
     matMulABT<<<grid2, bs2, sharedMemSize>>>(nn->Z3, nn->A2, nn->W3, BATCH_SIZE, 128, 10);
     addBias<<<grid2, bs2>>>(nn->Z3, nn->b3, BATCH_SIZE, 10);
     // Y_pred = softmax(Z3) = (32x10)
-    grid1.x = (unsigned int)(ceil((float)BATCH_SIZE / (float)bs1.x));
+    // grid1.x = (unsigned int)(ceil((float)BATCH_SIZE / (float)bs1.x));
+    grid1.x = (BATCH_SIZE + bs1.x - 1) / bs1.x;
     softmax<<<grid1, bs1>>>(nn->Y_pred, nn->Z3, BATCH_SIZE, 10);
 }
 
@@ -443,13 +447,14 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     // grid2.x = (unsigned int)ceil((float)10 / (float)bs2.x);
     grid2.y = (bs2.y + BATCH_SIZE - 1) / bs2.y;
     grid2.x = (bs2.x + 10 - 1) / bs2.x;
-    
+    sharedMemSize = (bs2.y * bs2.x * 2 + 1) * sizeof(__half);
     matSub<<<grid2, bs2>>>(nn->d_Z3, nn->Y_pred, Y_true, BATCH_SIZE, 10);
     // d_W3 = d_Z3^T @ A2 / 32 = (32x10)^T @ (32x128) = (10x128)
     // grid2.y = (unsigned int)ceil((float)10 / (float)bs2.y);
     // grid2.x = (unsigned int)ceil((float)128 / (float)bs2.x);
     grid2.y = (bs2.y + 10 - 1) / bs2.y;
     grid2.x = (bs2.x + 128 - 1) / bs2.x;
+    sharedMemSize = (bs2.y * bs2.x * 2 + 1) * sizeof(__half);
     matMulATB<<<grid2, bs2, sharedMemSize>>>(nn->d_W3, nn->d_Z3, nn->A2, 10, BATCH_SIZE, 128);
     // d_b3 = sum_batch(d_Z3) = sum_batch(32x10) = (1, 10)
     bs1.x = 10;
@@ -462,12 +467,14 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     // grid2.x = (unsigned int)ceil((float)128 / (float)bs2.x);
     grid2.y = (bs2.y + BATCH_SIZE - 1) / bs2.y;
     grid2.x = (bs2.x + 128 - 1) / bs2.x;
+    sharedMemSize = (bs2.y * bs2.x * 2 + 1) * sizeof(__half);
     matMulAB<<<grid2, bs2, sharedMemSize>>>(nn->d_A2, nn->d_Z3, nn->W3, BATCH_SIZE, 10, 128);
     // d_Z2 = d_relu(d_A2, Z2) = d_relu(32x128) = (32x128)
     drelu<<<grid2, bs2>>>(nn->d_Z2, nn->d_A2, nn->Z2, BATCH_SIZE, 128);
     // d_W2 = d_Z2^T @ A_1 / 32 = (32x128)^T @ (32x128) = (128x128)
     // grid2.y = (unsigned int)ceil((float)128 / (float)bs2.y);
     grid2.y = (bs2.y + 128 - 1) / bs2.y;
+    sharedMemSize = (bs2.y * bs2.x * 2 + 1) * sizeof(__half);
     // grid2.x = (bs2.x + 128 - 1) / bs2.x;
     matMulATB<<<grid2, bs2, sharedMemSize>>>(nn->d_W2, nn->d_Z2, nn->A1, 128, BATCH_SIZE, 128);
     // d_b2 = sum_batch(d_Z2) = sum_batch(32x128) = (1, 128)  
@@ -480,6 +487,7 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     // grid2.y = (unsigned int)ceil((float)BATCH_SIZE / (float)bs2.y);
     // grid2.x = (unsigned int)ceil(128 / bs2.x);
     grid2.y = (bs2.y + BATCH_SIZE - 1) / bs2.y;
+    sharedMemSize = (bs2.y * bs2.x * 2 + 1) * sizeof(__half);
     matMulAB<<<grid2, bs2, sharedMemSize>>>(nn->d_A1, nn->d_Z2, nn->W2, BATCH_SIZE, 128, 128);
     // d_Z1 = d_relu(d_A1, Z1) = d_relu(32x128) = (32x128)
     drelu<<<grid2, bs2>>>(nn->d_Z1, nn->d_A1, nn->Z1, BATCH_SIZE, 128);
@@ -488,6 +496,7 @@ void backward(ANN *nn, __half *X, __half *Y_true, int BATCH_SIZE, dim3 bs2 = dim
     // grid2.x = (unsigned int)ceil((float)784 / (float)bs2.x);
     grid2.y = (bs2.y + 128 - 1) / bs2.y;
     grid2.x = (bs2.x + 784 - 1) / bs2.x;
+    sharedMemSize = (bs2.y * bs2.x * 2 + 1) * sizeof(__half);
     matMulATB<<<grid2, bs2, sharedMemSize>>>(nn->d_W1, nn->d_Z1, X, 128, BATCH_SIZE, 784);
     // d_b1 = sum_batch(d_Z1) = sum_batch(32x128) = (1, 128)  
     bs1.x = 128;
