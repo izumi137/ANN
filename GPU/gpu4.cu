@@ -6,8 +6,8 @@
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 
-__constant__ __half const_bias1[128], const_bias2[128], const_bias3[10]; // Bias 128, 128, 10
-__constant__ __half d_b1[128], d_b2[128], d_b3[10];
+__constant__ __half const_bias1[128+1], const_bias2[128+1], const_bias3[10+1]; // Bias 128, 128, 10
+__constant__ __half d_b1[128+1], d_b2[128+1], d_b3[10+1];
 
 typedef struct {
     __half *W1, *W2, *W3;
@@ -335,7 +335,7 @@ __global__ void updateWeight1D(int bias, int k, __half LEARNING_RATE)
             const_bias1[idx] -= LEARNING_RATE * d_b1[idx];
         else if (bias == 2)
             const_bias2[idx] -= LEARNING_RATE * d_b2[idx];
-        else if (bias == 3)
+        else
             const_bias3[idx] -= LEARNING_RATE * d_b3[idx];
     }
 }
@@ -430,15 +430,9 @@ void initANN(ANN *nn, __half *X_train, __half *Y_train, __half *X_valid, __half 
     CHECK(cudaMemcpyToSymbol(const_bias2, b, 128 * sizeof(__half)));
     CHECK(cudaMemcpyToSymbol(const_bias3, b2, 10 * sizeof(__half)));
 
-    CHECK(cudaMemcpyToSymbol(d_b1, b, 128 * sizeof(__half)));
-    CHECK(cudaMemcpyToSymbol(d_b2, b, 128 * sizeof(__half)));
-    CHECK(cudaMemcpyToSymbol(d_b3, b2, 10 * sizeof(__half)));
-
     free(W1);
     free(W2);
     free(W3);
-    free(b);
-    free(b2);
 }
 
 
