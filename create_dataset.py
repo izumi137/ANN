@@ -78,7 +78,7 @@ folder_path = "fashion_mnist"
 
 # Xóa toàn bộ thư mục và các file con
 shutil.rmtree(folder_path)
-print(f"Đã xóa thư mục {folder_path} và tất cả các file con.")
+print(f"Deleted {folder_path}")
 
 
 # Save all images to a single .txt file

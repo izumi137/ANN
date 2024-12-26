@@ -47,9 +47,9 @@ int main(int argc, char ** argv)
     cfg.n_out = 10;
 
     chrono::steady_clock::time_point begin, end;
-    string train_file = "train.txt";
-    string test_file = "test.txt";
-    string valid_file = "valid.txt";
+    string train_file = "..//train.txt";
+    string test_file = "..//test.txt";
+    string valid_file = "..//valid.txt";
     // Load data
     std::cout << "Loading data...\n";
 
