@@ -402,7 +402,7 @@ void initANN(ANN *nn, __half *X_train, __half *Y_train, __half *X_valid, __half 
 void forward(ANN *nn, __half *X, int BATCH_SIZE, dim3 bs2 = dim3(32, 32), dim3 bs1 = dim3(32))
 {   
     dim3 grid1(1), grid2(1, 1);
-    int sharedMemSize = (bs2.y * bs2.x + 1) * sizeof(__half);
+    int sharedMemSize = (bs2.y * bs2.x * 2) * sizeof(__half);
     // Z1 = X @ W1^T + b1 = (32x784) @ (128x784)^T = (32x128) 
     grid2.y = (unsigned int)ceil((float)BATCH_SIZE / (float)bs2.y);
     grid2.x = (unsigned int)ceil((float)128 / (float)bs2.x);
