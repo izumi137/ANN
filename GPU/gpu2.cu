@@ -81,9 +81,9 @@ __global__ void matMulAB(__half *C, __half *A, __half *B, int m, int n, int k)
 
     if (row < m && col < k)
     {
-        __half sum = 0.0f;
+        __half sum = __float2half(0.0f);
         for (int i = 0; i < n; ++i) 
-            sum += A[row * n + i] * B[i * k + col];
+            sum = __hadd(sum, __hmul(A[row * n + i], B[i * k + col]));
 
         C[row * k + col] = sum;
     }
@@ -97,9 +97,9 @@ __global__ void matMulATB(__half *C, __half *A, __half *B, int m, int n, int k)
 
     if (row < m && col < k)
     {
-        __half sum = 0.0f;
+        __half sum = __float2half(0.0f);
         for (int i = 0; i < n; ++i) 
-            sum += A[i * m + row] * B[i * k + col];
+            sum = __hadd(sum, __hmul(A[i * m + row], B[i * k + col]));
 
         C[row * k + col] = sum;
     }
@@ -113,9 +113,9 @@ __global__ void matMulABT(__half *C, __half *A, __half *B, int m, int n, int k)
 
     if (row < m && col < k)
     {
-        __half sum = 0.0f;
+        __half sum = __float2half(0.0f);
         for (int i = 0; i < n; ++i) 
-            sum += A[row * n + i] * B[col * n + i];
+            sum = __hadd(sum, __hmul(A[row * n + i], B[col * n + i]));
 
         C[row * k + col] = sum;
     }
@@ -128,7 +128,7 @@ __global__ void addBias(__half *Z, __half *b, int m, int k)
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (row < m && col < k)
-        Z[row * k + col] += b[col];
+        Z[row * k + col] = __hadd(b[col], Z[row * k + col]);
 }
 
 // C(mxk) = A(mxk) - B(mxk)
@@ -140,7 +140,7 @@ __global__ void matSub(__half *C, __half *A, __half *B, int m, int k)
     if (row < m && col < k)
     {
         int idx = row * k + col;
-        C[idx] = A[idx] - B[idx];
+        C[idx] = __hsub(A[idx], B[idx]);
     }
 }
 
@@ -153,7 +153,7 @@ __global__ void relu(__half *A, __half *Z, int m, int k)
     if (row < m && col < k)
     {
         int idx = row * k + col;
-        A[idx] = fmaxf(0.0f, Z[idx]);
+        A[idx] = __hmax(0.0f, Z[idx]);
     }
 }
 
@@ -166,7 +166,7 @@ __global__ void drelu(__half *d_Z, __half *d_A, __half *Z, int m, int k)
     if (row < m && col < k)
     {
         int idx = row * k + col;
-        d_Z[idx] = d_A[idx] * ((Z[idx] >  __float2half(0.0f)) ?  __float2half(1.0f) :  __float2half(0.0f));
+        d_Z[idx] = d_A[idx] * (__hgt(Z[idx], __float2half(0.0f)) ? __float2half(1.0f) : __float2half(0.0f));
     }
 }
 
@@ -179,20 +179,21 @@ __global__ void softmax(__half *A, __half *Z, int BATCH_SIZE, int length)
     {
         __half mx = Z[b * length];
         for (int i = 1; i < length; ++i) 
-            mx = fmaxf(mx, Z[b * length + i]);
+            mx = __hmax(mx, Z[b * length + i]);  
 
-        __half sum = 0.0f;
+        __half sum = __float2half(0.0f);  
         for (int i = 0; i < length; ++i) 
         {
-            A[b * length + i] = expf(Z[b * length + i] - mx);
-            sum += A[b * length + i];
+            A[b * length + i] = expf(Z[b * length + i] - mx); 
+            sum = __hadd(sum, A[b * length + i]);  
         }
 
-        const __half epsilon = 1e-7f;
+        const __half epsilon = __float2half(1e-7f);  
         for (int i = 0; i < length; ++i) 
-            A[b * length + i] = A[b * length + i] / __hmax(sum, epsilon); //avoid divide by zero
+            A[b * length + i] = __hdiv(A[b * length + i], __hmax(sum, epsilon)); 
     }
 }
+
 
 // d_b = sumBatch(d_Z) = sum_batch(BATCHSIZExLENGTH) = (1xLENGTH)
 __global__ void sumBatch(__half *d_b, __half *d_Z, int BATCH_SIZE, int length)
@@ -200,13 +201,14 @@ __global__ void sumBatch(__half *d_b, __half *d_Z, int BATCH_SIZE, int length)
     int l = blockIdx.x * blockDim.x + threadIdx.x;
     if (l < length) 
     {
-        __half sum = 0.0f;
+        __half sum = __float2half(0.0f);  
         for (int i = 0; i < BATCH_SIZE; ++i)
-            sum += d_Z[i * length + l];
+            sum = __hadd(sum, d_Z[i * length + l]); 
 
         d_b[l] = sum;
     }
 }
+
 
 // W(mxk) -= LR * d_W(mxk)
 __global__ void updateWeight2D(__half *W, __half *d_W, int m, int k, __half LEARNING_RATE)
@@ -217,7 +219,7 @@ __global__ void updateWeight2D(__half *W, __half *d_W, int m, int k, __half LEAR
     if (row < m && col < k)
     {
         int idx = row * k + col;
-        W[idx] -= LEARNING_RATE * d_W[idx];
+        W[idx] = __hsub(W[idx], __hmul(LEARNING_RATE, d_W[idx]));
     }
 }
 
@@ -227,7 +229,7 @@ __global__ void updateWeight1D(__half *b, __half *d_b, int k, __half LEARNING_RA
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (idx < k)
-        b[idx] -= LEARNING_RATE * d_b[idx];
+        b[idx] = __hsub(b[idx], __hmul(LEARNING_RATE, d_b[idx]));
 }
 
 // Initialize weight matrix W (size mxk)
