@@ -40,9 +40,9 @@ void Data::print_sample(int idx)
     vector<vector<int>> image = _data[idx].getImage();
     int label = _data[idx].getLabel();
 
-    for (int i = 0; i < image.size(); i++)
+    for (size_t i = 0; i < image.size(); i++)
     {
-        for (int j = 0; j < image[0].size(); j++)
+        for (size_t j = 0; j < image[0].size(); j++)
         {
             cout << image[i][j] << ' ';
         }
@@ -92,7 +92,7 @@ vector<vector<int>> Data::get_batch_label(const int& bs, const int& idx, bool& f
 vector<vector<float>> Data::get_all_data()
 {
     vector<vector<float>> all_data;
-    for (int i = 0; i < _data.size(); i++)
+    for (size_t i = 0; i < _data.size(); i++)
     {
         all_data.push_back(_data[i].get_float_image());
     }
@@ -103,7 +103,7 @@ vector<vector<float>> Data::get_all_data()
 vector<vector<int>> Data::get_all_label()
 {
     vector<vector<int>> all_label;
-    for (int i = 0; i < _data.size(); i++)
+    for (size_t i = 0; i < _data.size(); i++)
     {
         vector<int> tmp;
         tmp.push_back(_data[i].getLabel());

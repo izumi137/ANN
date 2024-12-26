@@ -49,36 +49,11 @@ vector<vector<float>> batchnorm(vector<vector<float>> inp)
 {
     size_t batch_size = inp.size();
     size_t feature_size = inp[0].size();
-    float minRange = 0, maxRange = 1;
     
     vector<vector<float>> output = inp;
-    for (int b = 0; b < batch_size; b ++)
-        for (int i=0; i < feature_size; i ++)
+    for (size_t b = 0; b < batch_size; b ++)
+        for (size_t i=0; i < feature_size; i ++)
             output[b][i] /= 255.0f;
-    // Find the minimum and maximum values for each feature
-    //vector<float> minVals(feature_size, numeric_limits<float>::max());
-    //vector<float> maxVals(feature_size, numeric_limits<float>::lowest());
-
-    //for (const auto& row : inp) {
-    //    for (size_t j = 0; j < feature_size; ++j) {
-    //        minVals[j] = min(minVals[j], row[j]);
-    //        maxVals[j] = max(maxVals[j], row[j]);
-    //    }
-    //}
-
-    //// Normalize the input
-    //vector<vector<float>> output(batch_size, vector<float>(feature_size, 0.0f));
-    //for (size_t i = 0; i < batch_size; ++i) {
-    //    for (size_t j = 0; j < feature_size; ++j) {
-    //        // Handle division by zero if max and min are the same
-    //        if (maxVals[j] != minVals[j]) {
-    //            output[i][j] = ((inp[i][j] - minVals[j]) / (maxVals[j] - minVals[j])) * (maxRange - minRange) + minRange;
-    //        }
-    //        else {
-    //            output[i][j] = static_cast<float>(minRange); // If all values are the same, set to minRange
-    //        }
-    //    }
-    //}
 
     return output;
 }
@@ -87,7 +62,7 @@ float accuracy(vector<vector<int>> v1, vector<vector<int>> v2)
 {
     //cout << "len: " << v1.size() << " " << v2.size();
     float sum = 0;
-    for (int i = 0; i < v1.size(); i++)
+    for (size_t i = 0; i < v1.size(); i++)
         if (v1[i][0] == v2[i][0])
             sum += 1.0f / v1.size();
     return sum;
@@ -186,16 +161,16 @@ bool getBatchData(
     const int& batch,
     const int& batch_size)
 {
-    int start = batch * batch_size;
-    int end = start + batch_size;
+    size_t start = batch * batch_size;
+    size_t end = start + batch_size;
     if (end > x.size())
         return 0;
 
-    for (int i = start, i_b = 0; i < end; ++i, ++i_b)
+    for (size_t i = start, i_b = 0; i < end; ++i, ++i_b)
     {
-        for (int j = 0; j < xbatch[0].size(); ++j)
+        for (size_t j = 0; j < xbatch[0].size(); ++j)
             xbatch[i_b][j] = x[i][j];
-        for (int j = 0; j < ybatch[0].size(); ++j)
+        for (size_t j = 0; j < ybatch[0].size(); ++j)
             ybatch[i_b][j] = y[i][j];
     }
     return 1;

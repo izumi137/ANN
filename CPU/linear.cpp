@@ -19,17 +19,11 @@ vector<vector<float>> Linear::forward(const vector<vector<float>>& _input)
 }
 
 void Linear::update_weights(float lr) {
-    //for (auto& row : weights)
-    //    for (auto& w : row)
-    //        w -= lr*w;
-    //for (auto& b : biases)
-    //    b -= lr*b;
-
-    for (int b = 0; b < weights.size(); ++b)
-        for (int i = 0; i < weights[0].size(); ++i)
+    for (size_t b = 0; b < weights.size(); ++b)
+        for (size_t i = 0; i < weights[0].size(); ++i)
             weights[b][i] -= lr * grad_w[b][i];
 
-    for (int i = 0; i < biases.size(); ++i)
+    for (size_t i = 0; i < biases.size(); ++i)
         biases[i] -= lr * grad_b[i];
 }
 
@@ -45,10 +39,10 @@ vector<vector<float>> Linear::backward(const vector<vector<float>>& grad) {
 
     grad_w = matMul(input, grad, 2);
     grad_input = matMul(grad, weights, 1);
-    for (int i = 0; i < output_size; ++i)
+    for (size_t i = 0; i < output_size; ++i)
     {
         float sum = 0;
-        for (int b = 0; b < batch_size; ++b)
+        for (size_t b = 0; b < batch_size; ++b)
         {
             sum += grad[b][i];
         }

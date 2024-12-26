@@ -36,9 +36,9 @@ const std::vector<std::vector<int>>& BaseData::getImage() const {
 vector<float> BaseData::get_float_image()
 {
     vector<float> output;
-    for (int r = 0; r < image.size(); r++)
+    for (size_t r = 0; r < image.size(); r++)
     {
-        for (int c = 0; c < image[0].size(); c++)
+        for (size_t c = 0; c < image[0].size(); c++)
         {
             output.push_back(static_cast<float>(image[r][c]));
         }
