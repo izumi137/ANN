@@ -503,7 +503,6 @@ void train(ANN *nn, int EPOCHS, int BATCH_SIZE, float *Y_train, float *Y_valid, 
 }
 
 
-
 void readData(const char* filename, float* X, float* Y, int size)
 {
     FILE* file = fopen(filename, "r");
@@ -524,12 +523,98 @@ void readData(const char* filename, float* X, float* Y, int size)
     fclose(file);
 }
 
+
+void writeWeights(const char *filename, ANN *nn)
+{
+    // Allocate host memory to temporarily store the weights and biases
+    float *W1 = (float*)malloc(128 * 784 * sizeof(float));
+    float *b1 = (float*)malloc(128 * sizeof(float));
+    float *W2 = (float*)malloc(128 * 128 * sizeof(float));
+    float *b2 = (float*)malloc(128 * sizeof(float));
+    float *W3 = (float*)malloc(10 * 128 * sizeof(float));
+    float *b3 = (float*)malloc(10 * sizeof(float));
+
+    if (W1 == NULL || b1 == NULL || W2 == NULL || b2 == NULL || W3 == NULL || b3 == NULL) {
+        printf("Error allocating memory on host.\n");
+        return;
+    }
+
+    CHECK(cudaMemcpy(W1, nn->W1, 128 * 784 * sizeof(float), cudaMemcpyDeviceToHost));
+    CHECK(cudaMemcpy(b1, nn->b1, 128 * sizeof(float), cudaMemcpyDeviceToHost));
+    CHECK(cudaMemcpy(W2, nn->W2, 128 * 128 * sizeof(float), cudaMemcpyDeviceToHost));
+    CHECK(cudaMemcpy(b2, nn->b2, 128 * sizeof(float), cudaMemcpyDeviceToHost));
+    CHECK(cudaMemcpy(W3, nn->W3, 10 * 128 * sizeof(float), cudaMemcpyDeviceToHost));
+    CHECK(cudaMemcpy(b3, nn->b3, 10 * sizeof(float), cudaMemcpyDeviceToHost));
+
+    FILE *file = fopen(filename, "w");
+    if (file == NULL) {
+        printf("Error opening file for writing.\n");
+        free(W1);
+        free(b1);
+        free(W2);
+        free(b2);
+        free(W3);
+        free(b3);
+        return;
+    }
+
+    // Write W1 (128x784)
+    for (int i = 0; i < 128; ++i) 
+    {
+        for (int j = 0; j < 784; ++j) 
+            fprintf(file, "%f ", W1[i * 784 + j]);
+        fprintf(file, "\n");
+    }
+
+    // Write b1 (1x128)
+    for (int i = 0; i < 128; ++i) 
+        fprintf(file, "%f ", b1[i]);
+    fprintf(file, "\n");
+
+    // Write W2 (128x128)
+    for (int i = 0; i < 128; ++i) 
+    {
+        for (int j = 0; j < 128; ++j) 
+            fprintf(file, "%f ", W2[i * 128 + j]);
+        fprintf(file, "\n");
+    }
+
+    // Write b2 (1x128)
+    for (int i = 0; i < 128; ++i) 
+        fprintf(file, "%f ", b2[i]);
+    fprintf(file, "\n");
+
+    // Write W3 (10x128)
+    for (int i = 0; i < 10; ++i)
+     {
+        for (int j = 0; j < 128; ++j) 
+            fprintf(file, "%f ", W3[i * 128 + j]);
+        fprintf(file, "\n");
+    }
+
+    // Write b3 (1x10)
+    for (int i = 0; i < 10; ++i) 
+        fprintf(file, "%f ", b3[i]);
+    
+    fprintf(file, "\n");
+
+    fclose(file);
+
+    free(W1);
+    free(b1);
+    free(W2);
+    free(b2);
+    free(W3);
+    free(b3);
+}
+
 int main(int argc, char ** argv)
 {
+    srand(42);
     int BATCH_SIZE = atoi(argv[1]);
     int EPOCHS = atoi(argv[2]);
     dim3 bs1(atoi(argv[3])), bs2(atoi(argv[3]), atoi(argv[3]));
-    printf("Batch size %d:\n", BATCH_SIZE);
+    printf("Version: v1 (GPU)\n");
 
     float *X_train, *Y_train, *X_valid, *Y_valid, *X_test, *Y_test;
     X_train = (float *)malloc(784 * 50000 * sizeof(float));
@@ -547,6 +632,7 @@ int main(int argc, char ** argv)
     initANN(&nn, X_train, Y_train, X_valid, Y_valid, X_test, Y_test, BATCH_SIZE);
 
     train(&nn, EPOCHS, BATCH_SIZE, Y_train, Y_valid, Y_test, bs2, bs1);
+    writeWeights("..//v1weight.txt", &nn);
 
     CHECK(cudaFree(nn.W1));
     CHECK(cudaFree(nn.W2));
