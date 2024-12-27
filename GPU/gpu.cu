@@ -523,10 +523,10 @@ void readData(const char* filename, float* X, float* Y, int size)
     fclose(file);
 }
 
-
+// Write weights to file
+// Credit: Claude 3.5 Sonnet
 void writeWeights(const char *filename, ANN *nn)
 {
-    // Allocate host memory to temporarily store the weights and biases
     float *W1 = (float*)malloc(128 * 784 * sizeof(float));
     float *b1 = (float*)malloc(128 * sizeof(float));
     float *W2 = (float*)malloc(128 * 128 * sizeof(float));
