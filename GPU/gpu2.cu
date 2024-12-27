@@ -428,7 +428,7 @@ void eval(ANN *nn, int mode, __half* X, __half *Y_true, dim3 bs2 = dim3(32, 32),
     
     CHECK(cudaMemcpy(Y_pred, nn->Y_pred, 10 * size * sizeof(__half), cudaMemcpyDeviceToHost));
     
-    __half loss = 0;
+    float loss = 0;
     float acc = 0;
     for (int i = 0; i < size; ++i)
     {
@@ -448,7 +448,7 @@ void eval(ANN *nn, int mode, __half* X, __half *Y_true, dim3 bs2 = dim3(32, 32),
                 float f = __half2float(Y_pred[idx]);
                 label_idx = j;
                 float tmp = logf(fmaxf(f, 1e-7f));
-                loss -= __float2half(tmp);
+                loss -= tmp;
             }
         }
         if (label_idx == mx_idx)
@@ -457,13 +457,13 @@ void eval(ANN *nn, int mode, __half* X, __half *Y_true, dim3 bs2 = dim3(32, 32),
     acc /= size;
     acc *= 100; 
     loss /= size;
-    printf("Loss: %.4f, Accuracy: %.2f%%\n", __half2float(loss), __half2float(acc));
+    printf("Loss: %.4f, Accuracy: %.2f%%\n", loss, __half2float(acc));
     free(Y_pred);
     if (save_log == true)
     {
         float data[2];
         data[0] = __half2float(acc);
-        data[1] = __half2float(loss);
+        data[1] = loss;
         write_log("log.txt", data, 2);
     }
 }
@@ -534,10 +534,11 @@ void readData(const char* filename, __half* X, __half* Y, int size)
 
 int main(int argc, char ** argv)
 {
+    srand(42);
     int BATCH_SIZE = atoi(argv[1]);
     int EPOCHS = atoi(argv[2]);
     dim3 bs1(atoi(argv[3])), bs2(atoi(argv[3]), atoi(argv[3]));
-    printf("Batch size %d:\n", BATCH_SIZE);
+    printf("Version: v2 (GPU + fp16)\n");
 
     __half *X_train, *Y_train, *X_valid, *Y_valid, *X_test, *Y_test;
     X_train = (__half *)malloc(784 * 50000 * sizeof(__half));
