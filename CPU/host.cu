@@ -435,6 +435,7 @@ void train(ANN *nn, int EPOCHS, int BATCH_SIZE)
 }
 
 // Write weights to file
+// Credit: Claude 3.5 Sonnet
 void writeWeights(const char *filename, ANN *nn)
 {
     // Open the file for writing (write mode)
