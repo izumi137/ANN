@@ -384,7 +384,6 @@ void eval(ANN *nn, int mode, float* X, float *Y_true, bool save_log = false)
     acc *= 100; 
     loss /= size;
     printf("Loss: %.4f, Accuracy: %.2f%%\n", loss, acc);
-    free(Y_pred);
     if (save_log == true)
     {
         float data[2];
