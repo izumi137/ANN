@@ -434,6 +434,57 @@ void train(ANN *nn, int EPOCHS, int BATCH_SIZE)
     write_log("log.txt", data, 1, true);
 }
 
+// Write weights to file
+void writeWeights(const char *filename, ANN *nn)
+{
+    // Open the file for writing (write mode)
+    FILE *file = fopen(filename, "w");
+    if (file == NULL) 
+    {
+        printf("Error opening file for writing.\n");
+        return;
+    }
+
+    // Write W1 (128x784)
+    for (int i = 0; i < 128; ++i) 
+    {
+        for (int j = 0; j < 784; ++j) 
+            fprintf(file, "%f ", nn->W1[i * 784 + j]);
+        fprintf(file, "\n");
+    }
+
+    // Write b1 (1x128)
+    for (int i = 0; i < 128; ++i) 
+        fprintf(file, "%f ", nn->b1[i]);
+    fprintf(file, "\n");
+
+    // Write W2 (128x128)
+    for (int i = 0; i < 128; ++i) 
+    {
+        for (int j = 0; j < 128; ++j) 
+            fprintf(file, "%f ", nn->W2[i * 128 + j]);
+        fprintf(file, "\n");
+    }
+
+    // Write b2 (1x128)
+    for (int i = 0; i < 128; ++i) 
+        fprintf(file, "%f ", nn->b2[i]);
+    fprintf(file, "\n");
+
+    // Write W3 (10x128)
+    for (int i = 0; i < 10; ++i) 
+    {
+        for (int j = 0; j < 128; ++j) 
+            fprintf(file, "%f ", nn->W3[i * 128 + j]);
+        fprintf(file, "\n");
+    }
+
+    // Write b3 (1x10)
+    for (int i = 0; i < 10; ++i) 
+        fprintf(file, "%f ", nn->b3[i]);
+        
+    fclose(file);
+}
 
 
 void readData(const char* filename, float* X, float* Y, int size)
@@ -471,6 +522,7 @@ int main(int argc, char ** argv)
     readData("..//test.txt",  nn.X_test,  nn.Y_test,  10000);
 
     train(&nn, EPOCHS, BATCH_SIZE);
+    writeWeights("..//v0weight.txt", &nn);
 
     free(nn.W1);
     free(nn.W2);
