@@ -104,7 +104,7 @@ __global__ void matMulATB(float *C, float *A, float *B, int m, int n, int k)
     }
 }
 
-// C(mxk) = A(mxn) @ B(kxn)^T / d
+// C(mxk) = A(mxn) @ B(kxn)^T
 __global__ void matMulABT(float *C, float *A, float *B, int m, int n, int k)
 {
     int row = blockIdx.y * blockDim.y + threadIdx.y;

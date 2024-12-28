@@ -91,7 +91,7 @@ void matMulATB(float *C, float *A, float *B, int m, int n, int k)
     }
 }
 
-// C(mxk) = A(mxn) @ B(kxn)^T / d
+// C(mxk) = A(mxn) @ B(kxn)^T 
 void matMulABT(float *C, float *A, float *B, int m, int n, int k)
 {
     for (int row = 0; row < m; ++row)
