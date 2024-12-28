@@ -6,6 +6,7 @@
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 
+
 typedef struct {
     __half *W1, *W2, *W3;
     __half *d_W1, *d_W2, *d_W3;
@@ -153,7 +154,7 @@ __global__ void relu(__half *A, __half *Z, int m, int k)
     if (row < m && col < k)
     {
         int idx = row * k + col;
-        A[idx] = __hmax(0.0f, Z[idx]);
+        A[idx] = __hmax(__float2half(0.0f), Z[idx]);
     }
 }
 
@@ -166,7 +167,7 @@ __global__ void drelu(__half *d_Z, __half *d_A, __half *Z, int m, int k)
     if (row < m && col < k)
     {
         int idx = row * k + col;
-        d_Z[idx] = d_A[idx] * (__hgt(Z[idx], __float2half(0.0f)) ? __float2half(1.0f) : __float2half(0.0f));
+        d_Z[idx] = __hmul(d_A[idx], (__hgt(Z[idx], __float2half(0.0f)) ? __float2half(1.0f) : __float2half(0.0f)));
     }
 }
 
@@ -234,10 +235,10 @@ __global__ void updateWeight1D(__half *b, __half *d_b, int k, __half LEARNING_RA
 
 // Initialize weight matrix W (size mxk)
 void initWeight(__half *W, int m, int k) {
-    __half scale = __float2half(sqrtf(2.0f / k)); 
+    float scale = sqrtf(2.0f / k); 
     for (int i = 0; i < m * k; i++) {
         float rand_val = static_cast<float>(rand()) / RAND_MAX; 
-        __half uniform = __float2half(rand_val * 2.0f * __half2float(scale) - __half2float(scale)); 
+        __half uniform = __float2half(rand_val * 2.0f * scale - scale); 
         W[i] = uniform;
     }
 }
@@ -457,12 +458,12 @@ void eval(ANN *nn, int mode, __half* X, __half *Y_true, dim3 bs2 = dim3(32, 32),
     acc /= size;
     acc *= 100; 
     loss /= size;
-    printf("Loss: %.4f, Accuracy: %.2f%%\n", loss, __half2float(acc));
+    printf("Loss: %.4f, Accuracy: %.2f%%\n", loss, acc);
     free(Y_pred);
     if (save_log == true)
     {
         float data[2];
-        data[0] = __half2float(acc);
+        data[0] = acc;
         data[1] = loss;
         write_log("log.txt", data, 2);
     }
@@ -477,7 +478,6 @@ void train(ANN *nn, int EPOCHS, int BATCH_SIZE, __half *Y_train, __half *Y_valid
         GpuTimer timer;
         timer.Start();
         printf("Epoch %d/%d:\n", epoch, EPOCHS);
-        CHECK(cudaDeviceSynchronize());
 
         for (int batch = 0; batch < num_batches - 1; batch++) 
         {
@@ -534,7 +534,7 @@ void readData(const char* filename, __half* X, __half* Y, int size)
 
 int main(int argc, char ** argv)
 {
-    srand(42);
+    srand(42); // set seed 42
     int BATCH_SIZE = atoi(argv[1]);
     int EPOCHS = atoi(argv[2]);
     dim3 bs1(atoi(argv[3])), bs2(atoi(argv[3]), atoi(argv[3]));

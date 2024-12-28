@@ -75,50 +75,137 @@ struct GpuTimer
 // C(mxk) = A(mxn) @ B(nxk)
 __global__ void matMulAB(float *C, float *A, float *B, int m, int n, int k)
 {
+    // Block and thread indices
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (row < m && col < k)
-    {
-        float sum = 0.0f;
-        for (int i = 0; i < n; ++i) 
-            sum += A[row * n + i] * B[i * k + col];
+    int TILE_WIDTH = blockDim.x;
 
-        C[row * k + col] = sum;
+    extern __shared__ float sharedMem[];
+    float* tileA = sharedMem;                                  
+    float* tileB = tileA + TILE_WIDTH * TILE_WIDTH;     
+
+    float sum = 0.0f;
+
+    // Iterate over tiles
+    for (int t = 0; t < (n + TILE_WIDTH - 1) / TILE_WIDTH; ++t)
+    {
+        // Load A and B to shared memory
+        if (row < m && (t * TILE_WIDTH + threadIdx.x) < n)
+            tileA[threadIdx.y * TILE_WIDTH + threadIdx.x] = A[row * n + t * TILE_WIDTH + threadIdx.x];
+        else
+            tileA[threadIdx.y * TILE_WIDTH + threadIdx.x] = 0.0f;
+
+        if (col < k && (t * blockDim.y + threadIdx.y) < n)
+            tileB[threadIdx.y * TILE_WIDTH + threadIdx.x] = B[(t * blockDim.y + threadIdx.y) * k + col];
+        else
+            tileB[threadIdx.y * TILE_WIDTH + threadIdx.x] = 0.0f;
+
+        __syncthreads();
+
+        // Multiply the tiles and accumulate the result
+        for (int i = 0; i < TILE_WIDTH; ++i)
+            sum += tileA[threadIdx.y * TILE_WIDTH + i] * tileB[i * TILE_WIDTH + threadIdx.x];
+
+        __syncthreads();
     }
+
+    if (row < m && col < k)
+        C[row * k + col] = sum;
 }
 
 // C(mxk) = A(nxm)^T @ B(nxk)
 __global__ void matMulATB(float *C, float *A, float *B, int m, int n, int k)
 {
+    // Block and thread indices
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (row < m && col < k)
-    {
-        float sum = 0.0f;
-        for (int i = 0; i < n; ++i) 
-            sum += A[i * m + row] * B[i * k + col];
+    int TILE_WIDTH = blockDim.x;
 
-        C[row * k + col] = sum;
+    extern __shared__ float sharedMem[];
+    float* tileA = sharedMem;                           
+    float* tileB = tileA + TILE_WIDTH * TILE_WIDTH;     
+
+    float sum = 0.0f;
+
+    // Loop over tiles
+    for (int t = 0; t < (n + TILE_WIDTH - 1) / TILE_WIDTH; ++t)
+    {
+        // Load A and B to shared memory
+        if (row < m && (t * TILE_WIDTH + threadIdx.y) < n)
+            tileA[threadIdx.x * TILE_WIDTH + threadIdx.y] = A[(t * TILE_WIDTH + threadIdx.x) * m + row];
+        else
+            tileA[threadIdx.x * TILE_WIDTH + threadIdx.y] = 0.0f;
+
+        if (col < k && (t * TILE_WIDTH + threadIdx.y) < n)
+            tileB[threadIdx.x * TILE_WIDTH + threadIdx.y] = B[(t * TILE_WIDTH + threadIdx.y) * k + col];
+        else
+            tileB[threadIdx.x * TILE_WIDTH + threadIdx.y] = 0.0f;
+
+        __syncthreads();
+
+        // Multiply the tiles and accumulate the result
+        for (int i = 0; i < TILE_WIDTH; ++i)
+        {
+            sum += tileA[i * blockDim.y + threadIdx.y] * tileB[threadIdx.x * blockDim.y + i];
+        }
+
+        __syncthreads();
     }
+
+    if (row < m && col < k)
+        C[row * k + col] = sum;
 }
 
-// C(mxk) = A(mxn) @ B(kxn)^T / d
+// C(mxk) = A(mxn) @ B(kxn)^T
 __global__ void matMulABT(float *C, float *A, float *B, int m, int n, int k)
 {
+    // Block and thread indices
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (row < m && col < k)
-    {
-        float sum = 0.0f;
-        for (int i = 0; i < n; ++i) 
-            sum += A[row * n + i] * B[col * n + i];
+    int TILE_WIDTH = blockDim.x;
 
-        C[row * k + col] = sum;
+    extern __shared__ float sharedMem[];
+    float* tileA = sharedMem;                            // Tile for matrix A
+    float* tileB = tileA + TILE_WIDTH * TILE_WIDTH;      // Tile for transposed matrix B
+
+    // Accumulate result for this thread
+    float sum = 0.0f;
+
+    // Loop over tiles
+    for (int t = 0; t < (n + TILE_WIDTH - 1) / TILE_WIDTH; ++t)
+    {
+        // Load a tile of A into shared memory
+        if (row < m && (t * TILE_WIDTH + threadIdx.x) < n)
+            tileA[threadIdx.y * TILE_WIDTH + threadIdx.x] = A[row * n + t * TILE_WIDTH + threadIdx.x];
+        else
+            tileA[threadIdx.y * TILE_WIDTH + threadIdx.x] = 0.0f;
+
+        // Load a tile of B (transposed) into shared memory
+        if (col < k && (t * TILE_WIDTH + threadIdx.x) < n)
+            tileB[threadIdx.y * TILE_WIDTH + threadIdx.x] = B[col * n + t * TILE_WIDTH + threadIdx.y];
+            
+        else
+            tileB[threadIdx.y * TILE_WIDTH + threadIdx.x] = 0.0f;
+
+        __syncthreads();
+
+        // Multiply the tiles and accumulate the result
+        for (int i = 0; i < TILE_WIDTH; ++i)
+        {
+            sum += tileA[threadIdx.y * TILE_WIDTH + i] * tileB[threadIdx.x + i * TILE_WIDTH];
+        }
+
+        __syncthreads();
     }
+
+    // Write the result back to C
+    if (row < m && col < k)
+        C[row * k + col] = sum;
 }
+
 
 // Z(mxk) + b(1xk)
 __global__ void addBias(float *Z, float *b, int m, int k) 
@@ -311,23 +398,25 @@ void initANN(ANN *nn, float *X_train, float *Y_train, float *X_valid, float *Y_v
 void forward(ANN *nn, float *X, int BATCH_SIZE, dim3 bs2 = dim3(32, 32), dim3 bs1 = dim3(32))
 {   
     dim3 grid1(1), grid2(1, 1);
+
+    int sharedMemSize = bs2.y * bs2.x * 2 * sizeof(float);
     // Z1 = X @ W1^T + b1 = (32x784) @ (128x784)^T = (32x128) 
     grid2.y = (bs2.y + BATCH_SIZE - 1) / bs2.y;
     grid2.x = (bs2.x + 128 - 1) / bs2.x;
-    matMulABT<<<grid2, bs2>>>(nn->Z1, X, nn->W1, BATCH_SIZE, 784, 128);
+    matMulABT<<<grid2, bs2, sharedMemSize>>>(nn->Z1, X, nn->W1, BATCH_SIZE, 784, 128);
     addBias<<<grid2, bs2>>>(nn->Z1, nn->b1, BATCH_SIZE, 128);
     // A1 = relu(Z1) = (32x128)
     relu<<<grid2, bs2>>>(nn->A1, nn->Z1, BATCH_SIZE, 128);
 
     // Z2 = A1 @ W2^T + b2 = (32x128) @ (128x128)^T = (32x128)
-    matMulABT<<<grid2, bs2>>>(nn->Z2, nn->A1, nn->W2, BATCH_SIZE, 128, 128);
+    matMulABT<<<grid2, bs2, sharedMemSize>>>(nn->Z2, nn->A1, nn->W2, BATCH_SIZE, 128, 128);
     addBias<<<grid2, bs2>>>(nn->Z2, nn->b2, BATCH_SIZE, 128);
     // A2 = relu(Z2) = (32x128)
     relu<<<grid2, bs2>>>(nn->A2, nn->Z2, BATCH_SIZE, 128);
 
     // Z3 = A2 @ W3^T + b3 = (32x128) @ (10x128)^T = (32x10)
     grid2.x = (bs2.x + 10 - 1) / bs2.x;
-    matMulABT<<<grid2, bs2>>>(nn->Z3, nn->A2, nn->W3, BATCH_SIZE, 128, 10);
+    matMulABT<<<grid2, bs2, sharedMemSize>>>(nn->Z3, nn->A2, nn->W3, BATCH_SIZE, 128, 10);
     addBias<<<grid2, bs2>>>(nn->Z3, nn->b3, BATCH_SIZE, 10);
     // Y_pred = softmax(Z3) = (32x10)
     grid1.x = (BATCH_SIZE + bs1.x - 1) / bs1.x;
@@ -337,6 +426,7 @@ void forward(ANN *nn, float *X, int BATCH_SIZE, dim3 bs2 = dim3(32, 32), dim3 bs
 
 void backward(ANN *nn, float *X, float *Y_true, int BATCH_SIZE, dim3 bs2 = dim3(32, 32), dim3 bs1 = dim3(32))
 {
+    int sharedMemSize = bs2.y * bs2.x * 2 * sizeof(float);
     dim3 grid1(1), grid2(1, 1);
     // Layer: Output
     // d_Z3 = Y_pred - Y_true = (32x10)
@@ -346,9 +436,8 @@ void backward(ANN *nn, float *X, float *Y_true, int BATCH_SIZE, dim3 bs2 = dim3(
     // d_W3 = d_Z3^T @ A2 = (32x10)^T @ (32x128) = (10x128)
     grid2.y = (bs2.y + 10 - 1) / bs2.y;
     grid2.x = (bs2.x + 128 - 1) / bs2.x;
-    matMulATB<<<grid2, bs2>>>(nn->d_W3, nn->d_Z3, nn->A2, 10, BATCH_SIZE, 128);
+    matMulATB<<<grid2, bs2, sharedMemSize>>>(nn->d_W3, nn->d_Z3, nn->A2, 10, BATCH_SIZE, 128);
     // d_b3 = sum_batch(d_Z3) = sum_batch(32x10) = (1, 10)
-    
     grid1.x = (bs1.x + 10 - 1) / bs1.x;
     sumBatch<<<grid1, bs1>>>(nn->d_b3, nn->d_Z3, BATCH_SIZE, 10);
 
@@ -356,12 +445,13 @@ void backward(ANN *nn, float *X, float *Y_true, int BATCH_SIZE, dim3 bs2 = dim3(
     // d_A2 = d_Z3 @ W3 = (32x10) x (10x128) = (32x128)
     grid2.y = (bs2.y + BATCH_SIZE - 1) / bs2.y;
     grid2.x = (bs2.x + 128 - 1) / bs2.x;
-    matMulAB<<<grid2, bs2>>>(nn->d_A2, nn->d_Z3, nn->W3, BATCH_SIZE, 10, 128);
+    matMulAB<<<grid2, bs2, sharedMemSize>>>(nn->d_A2, nn->d_Z3, nn->W3, BATCH_SIZE, 10, 128);
     // d_Z2 = d_relu(d_A2, Z2) = d_relu(32x128) = (32x128)
     drelu<<<grid2, bs2>>>(nn->d_Z2, nn->d_A2, nn->Z2, BATCH_SIZE, 128);
-    // d_W2 = d_Z2^T @ A_1= (32x128)^T @ (32x128) = (128x128)
+    // d_W2 = d_Z2^T @ A_1 = (32x128)^T @ (32x128) = (128x128)
     grid2.y = (bs2.y + 128 - 1) / bs2.y;
-    matMulATB<<<grid2, bs2>>>(nn->d_W2, nn->d_Z2, nn->A1, 128, BATCH_SIZE, 128);
+    // grid2.x = (bs2.x + 128 - 1) / bs2.x;
+    matMulATB<<<grid2, bs2, sharedMemSize>>>(nn->d_W2, nn->d_Z2, nn->A1, 128, BATCH_SIZE, 128);
     // d_b2 = sum_batch(d_Z2) = sum_batch(32x128) = (1, 128)  
     grid1.x = (bs1.x + 128 - 1) / bs1.x;
     sumBatch<<<grid1, bs1>>>(nn->d_b2, nn->d_Z2, BATCH_SIZE, 128);
@@ -369,13 +459,13 @@ void backward(ANN *nn, float *X, float *Y_true, int BATCH_SIZE, dim3 bs2 = dim3(
     // Layer: Hidden 1
     // d_A1 = d_Z2 @ W2 = (32x128) x (128x128) = (32x128)
     grid2.y = (bs2.y + BATCH_SIZE - 1) / bs2.y;
-    matMulAB<<<grid2, bs2>>>(nn->d_A1, nn->d_Z2, nn->W2, BATCH_SIZE, 128, 128);
+    matMulAB<<<grid2, bs2, sharedMemSize>>>(nn->d_A1, nn->d_Z2, nn->W2, BATCH_SIZE, 128, 128);
     // d_Z1 = d_relu(d_A1, Z1) = d_relu(32x128) = (32x128)
     drelu<<<grid2, bs2>>>(nn->d_Z1, nn->d_A1, nn->Z1, BATCH_SIZE, 128);
     // d_W1 = d_Z1^T @ X = (32x128)^T @ (32x784) = (128x784)
     grid2.y = (bs2.y + 128 - 1) / bs2.y;
     grid2.x = (bs2.x + 784 - 1) / bs2.x;
-    matMulATB<<<grid2, bs2>>>(nn->d_W1, nn->d_Z1, X, 128, BATCH_SIZE, 784);
+    matMulATB<<<grid2, bs2, sharedMemSize>>>(nn->d_W1, nn->d_Z1, X, 128, BATCH_SIZE, 784);
     // d_b1 = sum_batch(d_Z1) = sum_batch(32x128) = (1, 128)  
     sumBatch<<<grid1, bs1>>>(nn->d_b1, nn->d_Z1, BATCH_SIZE, 128);
 
@@ -465,7 +555,6 @@ void train(ANN *nn, int EPOCHS, int BATCH_SIZE, float *Y_train, float *Y_valid, 
         GpuTimer timer;
         timer.Start();
         printf("Epoch %d/%d:\n", epoch, EPOCHS);
-        CHECK(cudaDeviceSynchronize());
 
         for (int batch = 0; batch < num_batches - 1; batch++) 
         {
@@ -519,98 +608,13 @@ void readData(const char* filename, float* X, float* Y, int size)
     fclose(file);
 }
 
-// Write weights to file
-// Credit: Claude 3.5 Sonnet
-void writeWeights(const char *filename, ANN *nn)
-{
-    float *W1 = (float*)malloc(128 * 784 * sizeof(float));
-    float *b1 = (float*)malloc(128 * sizeof(float));
-    float *W2 = (float*)malloc(128 * 128 * sizeof(float));
-    float *b2 = (float*)malloc(128 * sizeof(float));
-    float *W3 = (float*)malloc(10 * 128 * sizeof(float));
-    float *b3 = (float*)malloc(10 * sizeof(float));
-
-    if (W1 == NULL || b1 == NULL || W2 == NULL || b2 == NULL || W3 == NULL || b3 == NULL) {
-        printf("Error allocating memory on host.\n");
-        return;
-    }
-
-    CHECK(cudaMemcpy(W1, nn->W1, 128 * 784 * sizeof(float), cudaMemcpyDeviceToHost));
-    CHECK(cudaMemcpy(b1, nn->b1, 128 * sizeof(float), cudaMemcpyDeviceToHost));
-    CHECK(cudaMemcpy(W2, nn->W2, 128 * 128 * sizeof(float), cudaMemcpyDeviceToHost));
-    CHECK(cudaMemcpy(b2, nn->b2, 128 * sizeof(float), cudaMemcpyDeviceToHost));
-    CHECK(cudaMemcpy(W3, nn->W3, 10 * 128 * sizeof(float), cudaMemcpyDeviceToHost));
-    CHECK(cudaMemcpy(b3, nn->b3, 10 * sizeof(float), cudaMemcpyDeviceToHost));
-
-    FILE *file = fopen(filename, "w");
-    if (file == NULL) {
-        printf("Error opening file for writing.\n");
-        free(W1);
-        free(b1);
-        free(W2);
-        free(b2);
-        free(W3);
-        free(b3);
-        return;
-    }
-
-    // Write W1 (128x784)
-    for (int i = 0; i < 128; ++i) 
-    {
-        for (int j = 0; j < 784; ++j) 
-            fprintf(file, "%f ", W1[i * 784 + j]);
-        fprintf(file, "\n");
-    }
-
-    // Write b1 (1x128)
-    for (int i = 0; i < 128; ++i) 
-        fprintf(file, "%f ", b1[i]);
-    fprintf(file, "\n");
-
-    // Write W2 (128x128)
-    for (int i = 0; i < 128; ++i) 
-    {
-        for (int j = 0; j < 128; ++j) 
-            fprintf(file, "%f ", W2[i * 128 + j]);
-        fprintf(file, "\n");
-    }
-
-    // Write b2 (1x128)
-    for (int i = 0; i < 128; ++i) 
-        fprintf(file, "%f ", b2[i]);
-    fprintf(file, "\n");
-
-    // Write W3 (10x128)
-    for (int i = 0; i < 10; ++i)
-     {
-        for (int j = 0; j < 128; ++j) 
-            fprintf(file, "%f ", W3[i * 128 + j]);
-        fprintf(file, "\n");
-    }
-
-    // Write b3 (1x10)
-    for (int i = 0; i < 10; ++i) 
-        fprintf(file, "%f ", b3[i]);
-    
-    fprintf(file, "\n");
-
-    fclose(file);
-
-    free(W1);
-    free(b1);
-    free(W2);
-    free(b2);
-    free(W3);
-    free(b3);
-}
-
 int main(int argc, char ** argv)
 {
-    srand(42); // set seed 42
+    srand(42);
     int BATCH_SIZE = atoi(argv[1]);
     int EPOCHS = atoi(argv[2]);
     dim3 bs1(atoi(argv[3])), bs2(atoi(argv[3]), atoi(argv[3]));
-    printf("Version: v1 (GPU)\n");
+    printf("Version: v3 (GPU + shared memory matmul)\n");
 
     float *X_train, *Y_train, *X_valid, *Y_valid, *X_test, *Y_test;
     X_train = (float *)malloc(784 * 50000 * sizeof(float));
@@ -628,7 +632,6 @@ int main(int argc, char ** argv)
     initANN(&nn, X_train, Y_train, X_valid, Y_valid, X_test, Y_test, BATCH_SIZE);
 
     train(&nn, EPOCHS, BATCH_SIZE, Y_train, Y_valid, Y_test, bs2, bs1);
-    writeWeights("..//v1weight.txt", &nn);
 
     CHECK(cudaFree(nn.W1));
     CHECK(cudaFree(nn.W2));
