@@ -107,7 +107,6 @@ __global__ void matMulAB(float *C, float *A, float *B, int m, int n, int k)
         for (int i = 0; i < TILE_WIDTH; ++i)
             sum += tileA[threadIdx.y * TILE_WIDTH + i] * tileB[i * TILE_WIDTH + threadIdx.x];
 
-        __syncthreads();
     }
 
     if (row < m && col < k)
@@ -147,11 +146,8 @@ __global__ void matMulATB(float *C, float *A, float *B, int m, int n, int k)
 
         // Multiply the tiles and accumulate the result
         for (int i = 0; i < TILE_WIDTH; ++i)
-        {
             sum += tileA[i * blockDim.y + threadIdx.y] * tileB[threadIdx.x * blockDim.y + i];
-        }
 
-        __syncthreads();
     }
 
     if (row < m && col < k)
@@ -194,11 +190,8 @@ __global__ void matMulABT(float *C, float *A, float *B, int m, int n, int k)
 
         // Multiply the tiles and accumulate the result
         for (int i = 0; i < TILE_WIDTH; ++i)
-        {
             sum += tileA[threadIdx.y * TILE_WIDTH + i] * tileB[threadIdx.x + i * TILE_WIDTH];
-        }
 
-        __syncthreads();
     }
 
     // Write the result back to C

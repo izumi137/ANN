@@ -377,6 +377,7 @@ void backward(ANN *nn, float *X, float *Y_true, int BATCH_SIZE, dim3 bs2 = dim3(
     grid2.x = (bs2.x + 784 - 1) / bs2.x;
     matMulATB<<<grid2, bs2>>>(nn->d_W1, nn->d_Z1, X, 128, BATCH_SIZE, 784);
     // d_b1 = sum_batch(d_Z1) = sum_batch(32x128) = (1, 128)  
+    // grid1.x = (bs1.x + 128 - 1) / bs1.x;
     sumBatch<<<grid1, bs1>>>(nn->d_b1, nn->d_Z1, BATCH_SIZE, 128);
 
     // UPDATE WEIGHTS
